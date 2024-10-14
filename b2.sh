@@ -1,0 +1,1 @@
+python test_quant.py --model vit_base --config ./configs/4bit/vit_base_4bit.py --dataset ~/data/ILSVRC --val-batch-size 500   --calibrate --optimize
