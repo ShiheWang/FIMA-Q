@@ -105,16 +105,11 @@ def wrap_modules_in_net(model, cfg, reparam=False, recon=False):
                 'head_channel_wise': cfg.matmul_head_channel_wise,
                 'num_heads': father_module.num_heads,
             }
-            if 'matmul2' in name:
-                new_module = PostSoftmaxAsymmetricallyBatchingQuantMatMul(
-                    A_bit = cfg.s_bit,
-                    **matmul_kwargs,
-                )
-            else:
-                new_module = AsymmetricallyBatchingQuantMatMul(
-                    A_bit = cfg.a_bit,
-                    **matmul_kwargs
-                )
+            
+            new_module = AsymmetricallyBatchingQuantMatMul(
+                A_bit = cfg.a_bit,
+                **matmul_kwargs
+            )
             setattr(father_module, name[idx:], new_module)
         if isinstance(module, nn.Linear):
             cur_a_bit = cfg.qhead_a_bit if 'head' in name else cfg.a_bit

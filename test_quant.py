@@ -96,8 +96,7 @@ def get_args_parser():
                         help='dropping rate in qdrop. set `drop-prob = 1.0` if do not use qdrop.')
     parser.add_argument('--quant-ratio', type=float, default=argparse.SUPPRESS, 
                         help='quant rate in qdrop+. set `quant-ratio = 1.0` if use `qinp`.')
-    parser.add_argument('--pct1', type=float, default=argparse.SUPPRESS, help='clamp percentile of mlp.fc1.')
-    parser.add_argument('--pct2', type=float, default=argparse.SUPPRESS, help='clamp percentile of mlp.fc2.')
+    parser.add_argument('--k', type=float, default=1, help='The rank of Fisher')
     return parser
 
 
@@ -245,7 +244,7 @@ def main(args):
         logging.info('Building calibrator ...')
         calib_loader = g.calib_loader(num=cfg.optim_size, batch_size=cfg.optim_batch_size, seed=args.seed)
         logging.info("{} - start {} guided block reconstruction".format(get_cur_time(), cfg.optim_metric))
-        block_reconstructor = BlockReconstructor(model, full_model, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, use_mean_hessian=cfg.use_mean_hessian)
+        block_reconstructor = BlockReconstructor(model, full_model, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, use_mean_hessian=cfg.use_mean_hessian,k=args.k)
         block_reconstructor.reconstruct_model(quant_act=True, mode=cfg.optim_mode, drop_prob=cfg.drop_prob, keep_gpu=cfg.keep_gpu)
         logging.info("{} - {} guided block reconstruction finished.".format(get_cur_time(), cfg.optim_metric))
         save_model(model, args, cfg, mode='optimize')

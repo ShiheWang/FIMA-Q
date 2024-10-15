@@ -22,20 +22,24 @@ def patch_embed_forward(self, x):
     else:
         x = x.permute(0, 2, 3, 1)
     x = self.norm(x)
-    if self.perturb_u:
-        x = x + torch.ones_like(x) * 1e-6
-    elif self.perturb_d:
-        x = x - torch.ones_like(x) * 1e-6
+    if self.perturb:
+        rand_perturb = torch.empty_like(x, dtype=torch.float).uniform_(1, 2) * 1e-6
+        x = x + rand_perturb
+        if not hasattr(self, 'perturb_y'):
+            self.perturb_y = []
+        self.perturb_y.append(rand_perturb)
     return x
 
 
 def vit_block_forward(self, x: torch.Tensor) -> torch.Tensor:
     x = x + self.drop_path1(self.ls1(self.attn(self.norm1(x))))
     x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
-    if self.perturb_u:
-        x = x + torch.ones_like(x) * 1e-6
-    elif self.perturb_d:
-        x = x - torch.ones_like(x) * 1e-6
+    if self.perturb:
+        rand_perturb = torch.empty_like(x, dtype=torch.float).uniform_(1, 2) * 1e-6
+        x = x + rand_perturb
+        if not hasattr(self, 'perturb_y'):
+            self.perturb_y = []
+        self.perturb_y.append(rand_perturb)
     return x
 
 
@@ -60,10 +64,12 @@ def swin_block_forward(self, x):
     x = x.reshape(B, -1, C)
     x = x + self.drop_path(self.mlp(self.norm2(x)))
     x = x.reshape(B, H, W, C)
-    if self.perturb_u:
-        x = x + torch.ones_like(x) * 1e-6
-    elif self.perturb_d:
-        x = x - torch.ones_like(x) * 1e-6
+    if self.perturb:
+        rand_perturb = torch.empty_like(x, dtype=torch.float).uniform_(1, 2) * 1e-6
+        x = x + rand_perturb
+        if not hasattr(self, 'perturb_y'):
+            self.perturb_y = []
+        self.perturb_y.append(rand_perturb)
     return x
 
 
@@ -72,19 +78,22 @@ def swin_patchmerging_forward(self, x):
     x = x.reshape(B, H // 2, 2, W // 2, 2, C).permute(0, 1, 3, 4, 2, 5).flatten(3)
     x = self.norm(x)
     x = self.reduction(x)
-    if self.perturb_u:
-        x = x + torch.ones_like(x) * 1e-6
-    elif self.perturb_d:
-        x = x - torch.ones_like(x) * 1e-6
+    if self.perturb:
+        rand_perturb = torch.empty_like(x, dtype=torch.float).uniform_(1, 2) * 1e-6
+        x = x + rand_perturb
+        if not hasattr(self, 'perturb_y'):
+            self.perturb_y = []
+        self.perturb_y.append(rand_perturb)
     return x
 
 
 class BlockReconstructor(QuantCalibrator):
-    def __init__(self, model, full_model, calib_loader, metric="hessian_new", use_mean_hessian=True, temp=20):
+    def __init__(self, model, full_model, calib_loader, metric="mse", use_mean_hessian=True, temp=20,k=1):
         super().__init__(model, calib_loader)
         self.full_model = full_model
         self.metric = metric
         self.use_mean_hessian = use_mean_hessian
+        self.k=k
         self.blocks = {}
         self.full_blocks = {}
         self.quanted_blocks = []
@@ -119,7 +128,7 @@ class BlockReconstructor(QuantCalibrator):
             module.forward = MethodType(swin_block_forward, module)
         elif isinstance(module, timm.models.swin_transformer.PatchMerging):
             module.forward = MethodType(swin_patchmerging_forward, module)
-        module.perturb_u = module.perturb_d = False
+        module.perturb = False
                 
     def set_block_mode(self, block, mode='raw'):
         for _, module in block.named_modules():
@@ -167,8 +176,8 @@ class BlockReconstructor(QuantCalibrator):
         if qinp and 'patch_embed' not in name:
             self.init_block_quanted_input(block, full_block, name, device)
         
-        if self.metric == "hessian_perturb":
-            self.init_block_perturb_hessian(block, full_block, name, device)
+        if self.metric == "fisher_ro":
+            self.init_block_RO_hessian(block, full_block, name, device)
         elif self.metric == "hessian":
             self.init_block_brecq_hessian(block, full_block, name, device)
 
@@ -190,7 +199,7 @@ class BlockReconstructor(QuantCalibrator):
         hooks.append(full_block.register_forward_hook(self.outp_forward_hook))
         hooks.append(full_block.register_forward_hook(self.single_input_forward_hook))
         need_calculate_raw_softmax = False
-        if self.raw_pred_softmaxs is None and self.metric in ["hessian", "hessian_perturb"]:
+        if self.raw_pred_softmaxs is None and self.metric in ["hessian", "fisher_ro"]:
             need_calculate_raw_softmax = True
             self.raw_pred_softmaxs = []
         with torch.no_grad():
@@ -225,14 +234,15 @@ class BlockReconstructor(QuantCalibrator):
         for _name, _block in self.blocks.items():
             self.set_block_mode(_block, 'raw')
 
-    def init_block_perturb_hessian(self, block, full_block, name, device):
+    def init_block_RO_hessian(self, block, full_block, name, device):
         logging.info('initializing perturbation hessian ...')
         for _name, _block in self.blocks.items():
             self.set_block_mode(_block, 'raw')
         raw_grads = []
-        for step in range(2):
+        
+        full_block.perturb=True
+        for step in range(self.k):
             hook = full_block.register_full_backward_hook(self.grad_hook)
-            full_block.perturb_u, full_block.perturb_d = (step == 0, step == 1)
             for i, (inp, target) in enumerate(self.calib_loader):
                 self.model.zero_grad()
                 inp = inp.to(device)
@@ -240,14 +250,15 @@ class BlockReconstructor(QuantCalibrator):
                 loss = F.kl_div(F.log_softmax(pred, dim=-1), self.raw_pred_softmaxs[i], reduction="batchmean")
                 loss.backward()
             torch.cuda.empty_cache()
-            raw_grads.append(torch.cat(full_block.tmp_grad, dim=0))
+            raw_grad=torch.cat(full_block.tmp_grad, dim=0)
+            raw_grad=raw_grad.reshape(raw_grad.shape[0], -1).abs()
+            raw_grad=raw_grad * torch.sqrt(raw_grad.numel() / raw_grad.pow(2).sum())
+            raw_grads.append(raw_grad)
             full_block.tmp_grad = None
-            full_block.perturb_u = full_block.perturb_d = False
-            hook.remove()
-        block.raw_grad = (raw_grads[0] - raw_grads[1]).abs()
-        block.raw_grad = block.raw_grad.mean(dim=0, keepdim=True) if self.use_mean_hessian else block.raw_grad
-        block.raw_grad = block.raw_grad * torch.sqrt(block.raw_grad.numel() / block.raw_grad.pow(2).sum())
-        #归一化，均值等于1，类似mse
+        full_block.perturb = False
+        hook.remove()
+        block.raw_grad = torch.tensor([item.cpu().detach().numpy() for item in raw_grads]).to(device)
+
 
     def init_block_brecq_hessian(self, block, full_block, name, device):
         logging.info('initializing brecq hessian ...')
@@ -318,8 +329,8 @@ class BlockReconstructor(QuantCalibrator):
             elif mode == 'qinp':
                 cur_inp = block.quanted_input[idx].to(device)
             cur_out = block.raw_out[idx].to(device)
-            if self.metric == "hessian_perturb" and self.use_mean_hessian:
-                cur_grad = block.raw_grad.to(device)
+            if self.metric == "fisher_ro" :
+                cur_grad = block.raw_grad[:,idx].to(device)
             elif self.metric == "hessian" or not self.use_mean_hessian:
                 cur_grad = block.raw_grad[idx].to(device)
             else:
@@ -419,6 +430,18 @@ class LossFunction:
         self.count += 1
         if self.rec_loss == 'mse':
             rec_loss = self.lp_loss(pred, tgt, p=self.p) / 10
+        elif self.rec_loss == 'fisher_ro':
+            cha = (pred - tgt).abs().reshape(pred.shape[0], -1)
+            loss_1 = (cha * grad.transpose(0,1)).mean(dim=1).pow(2).mean()
+            if self.count == 1:
+                self.init_loss_1 = loss_1.detach()
+            rec_loss = 2 * loss_1 / self.init_loss_1
+        elif self.rec_loss == 'fisher_diag':
+            cha = (pred - tgt).abs()
+            loss_2 = (cha.pow(2) * grad.abs()).mean()
+            if self.count == 1:
+                self.init_loss_2 = loss_2.detach()
+            rec_loss = 2 * loss_2 / self.init_loss_2
         elif self.rec_loss == 'mae':
             rec_loss = self.lp_loss(pred, tgt, p=1.0) / 10
         elif self.rec_loss in ['hessian', 'hessian_perturb']:

@@ -55,11 +55,11 @@ class QuantCalibrator:
                     hooks.append(module.register_forward_hook(self.single_input_forward_hook))
                 if isinstance(module, MinMaxQuantMatMul):
                     hooks.append(module.register_forward_hook(self.double_input_forward_hook))
-                for i, (inp, target) in enumerate(self.calib_loader):
-                    self.model.zero_grad()
-                    torch.cuda.empty_cache()
-                    inp = inp.to(device)
-                    pred = self.model(inp)
+                with torch.no_grad():
+                    for i, (inp, target) in enumerate(self.calib_loader):
+                        torch.cuda.empty_cache()
+                        inp = inp.to(device)
+                        pred = self.model(inp)
                     
                 # replace cached raw_inputs, raw_outs
                 module.raw_out = torch.cat(module.tmp_out, dim=0)
