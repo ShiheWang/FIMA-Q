@@ -238,7 +238,6 @@ class BlockReconstructor(QuantCalibrator):
         logging.info('initializing perturbation hessian ...')
         for _name, _block in self.blocks.items():
             self.set_block_mode(_block, 'raw')
-        raw_grads = []
         
         full_block.perturb=True
         for step in range(self.k):
@@ -249,15 +248,22 @@ class BlockReconstructor(QuantCalibrator):
                 pred = self.full_model(inp) / self.temperature
                 loss = F.kl_div(F.log_softmax(pred, dim=-1), self.raw_pred_softmaxs[i], reduction="batchmean")
                 loss.backward()
-            torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
             raw_grad=torch.cat(full_block.tmp_grad, dim=0)
             raw_grad=raw_grad.reshape(raw_grad.shape[0], -1).abs()
             raw_grad=raw_grad * torch.sqrt(raw_grad.numel() / raw_grad.pow(2).sum())
-            raw_grads.append(raw_grad)
+            if step==0:
+                raw_grads=raw_grad.unsqueeze(0)
+            else:
+                raw_grads=torch.cat((raw_grads,raw_grad.unsqueeze(0)),dim=0)
+            raw_grad=None
             full_block.tmp_grad = None
+            hook.remove()
         full_block.perturb = False
-        hook.remove()
-        block.raw_grad = torch.tensor([item.cpu().detach().numpy() for item in raw_grads]).to(device)
+        block.raw_grad = raw_grads
+        del raw_grad,raw_grads
+        torch.cuda.empty_cache()
+        
 
 
     def init_block_brecq_hessian(self, block, full_block, name, device):
@@ -432,7 +438,7 @@ class LossFunction:
             rec_loss = self.lp_loss(pred, tgt, p=self.p) / 10
         elif self.rec_loss == 'fisher_ro':
             cha = (pred - tgt).abs().reshape(pred.shape[0], -1)
-            loss_1 = (cha * grad.transpose(0,1)).mean(dim=1).pow(2).mean()
+            loss_1 = (cha.unsqueeze(1) * grad.transpose(0,1)).mean(dim=2).pow(2).mean()
             if self.count == 1:
                 self.init_loss_1 = loss_1.detach()
             rec_loss = 2 * loss_1 / self.init_loss_1

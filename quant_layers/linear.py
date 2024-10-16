@@ -335,7 +335,6 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
     def _search_best_a_scale_self(self, input_scale_candidates, input_zero_point_candidates, topk=1):
         batch_similarities = [] # similarities, need to concatenate and calculate sum (equivalent to mean with argmax)
         for b_st in range(0, self.calib_size, self.calib_batch_size):
-            torch.cuda.empty_cache()
             b_ed = min(self.calib_size, b_st + self.calib_batch_size)
             x = self.raw_input[b_st:b_ed].cuda()
             raw_x = self.raw_input[b_st:b_ed].cuda().unsqueeze(-1) # shape: b,*,in_features,1
@@ -371,7 +370,6 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
     def _search_best_w_scale(self, weight_scale_candidates, weight_zero_point_candidates, topk=1):
         batch_similarities = [] # similarities, need to concatenate and calculate sum (equivalent to mean with argmax)
         for b_st in range(0, self.calib_size, self.calib_batch_size):
-            torch.cuda.empty_cache()
             b_ed = min(self.calib_size, b_st + self.calib_batch_size)
             x = self.raw_input[b_st:b_ed].cuda()
             raw_out_expanded = self.raw_out[b_st:b_ed].cuda().unsqueeze(-2) # shape: b,*,1,out_features
@@ -411,13 +409,11 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
     def _search_best_a_scale(self, input_scale_candidates, input_zero_point_candidates, topk=1):
         batch_similarities = [] # similarities, need to concatenate and calculate sum (equivalent to mean with argmax)
         for b_st in range(0, self.calib_size, self.calib_batch_size):
-            torch.cuda.empty_cache()
             b_ed = min(self.calib_size, b_st + self.calib_batch_size)
             x = self.raw_input[b_st:b_ed].cuda()
             raw_out_expanded = self.raw_out[b_st:b_ed].cuda().unsqueeze(-2) # shape: b,*,1,oc
             similarities = []
             for p_st in range(0,self.eq_n,self.parallel_eq_n):
-                torch.cuda.empty_cache()
                 p_ed = min(self.eq_n, p_st+self.parallel_eq_n)
                 cur_a_scale = input_scale_candidates[:, p_st:p_ed]
                 cur_a_zero_point = input_zero_point_candidates[:, p_st:p_ed]
@@ -516,11 +512,9 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
         weight_scale_candidates, weight_zero_point_candidates = self.calculate_percentile_weight_candidates()
         a_scale_candidates, a_zero_point_candidates = self.calculate_percentile_activation_candidates()
         self._search_best_w_scale_self(weight_scale_candidates, weight_zero_point_candidates)
-        torch.cuda.empty_cache()
         self._search_best_a_scale_self(a_scale_candidates, a_zero_point_candidates)
         for e in range(self.search_round):
             self._search_best_w_scale(weight_scale_candidates, weight_zero_point_candidates)
-            torch.cuda.empty_cache()
             self._search_best_a_scale(a_scale_candidates, a_zero_point_candidates)
 
         self.calibrated = True

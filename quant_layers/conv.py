@@ -236,7 +236,6 @@ class AsymmetricallyBatchingQuantConv2d(PTQSLBatchingQuantConv2d):
     def _search_best_w_scale(self, weight_scale_candidates, weight_zero_point_candidates):
         batch_similarities = []
         for b_st in range(0, self.calib_size, self.calib_batch_size):
-            torch.cuda.empty_cache()
             b_ed = min(self.calib_size, b_st+self.calib_batch_size)
             x = self.raw_input[b_st:b_ed].cuda()
             raw_out = self.raw_out[b_st:b_ed].cuda().unsqueeze(1) # shape: b,1,oc,fw,fh
@@ -312,4 +311,3 @@ class AsymmetricallyBatchingQuantConv2d(PTQSLBatchingQuantConv2d):
                 break
         self.calibrated = True
         del self.raw_input, self.raw_out
-            
