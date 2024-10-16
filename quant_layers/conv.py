@@ -311,3 +311,4 @@ class AsymmetricallyBatchingQuantConv2d(PTQSLBatchingQuantConv2d):
                 break
         self.calibrated = True
         del self.raw_input, self.raw_out
+            

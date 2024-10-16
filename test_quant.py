@@ -83,12 +83,11 @@ def get_args_parser():
     parser.add_argument("--seed", default=3407, type=int, help="seed")
     parser.add_argument('--w_bit', type=int, default=argparse.SUPPRESS, help='bit-precision of weights')
     parser.add_argument('--a_bit', type=int, default=argparse.SUPPRESS, help='bit-precision of activation')
-    parser.add_argument('--s_bit', type=int, default=argparse.SUPPRESS, help='bit-precision of post softmax activation')
     parser.add_argument("--recon-metric", type=str, default=argparse.SUPPRESS, choices=['hessian_perturb', 'mse', 'mae'], 
                         help='mlp reconstruction metric')
     parser.add_argument("--calib-metric", type=str, default=argparse.SUPPRESS, choices=['mse', 'mae'], 
                         help='calibration metric')
-    parser.add_argument("--optim-metric", type=str, default=argparse.SUPPRESS, choices=['hessian', 'hessian_perturb', 'mse', 'mae'], 
+    parser.add_argument("--optim-metric", type=str, default=argparse.SUPPRESS, choices=['hessian', 'hessian_perturb', 'fisher_dpro', 'fisher_ro', 'fisher_diag', 'mse', 'mae'], 
                         help='optimization metric')
     parser.add_argument('--optim-mode', type=str, default=argparse.SUPPRESS, choices=['qinp', 'rinp', 'qdrop'], 
                         help='`qinp`:use quanted input; `rinp`: use raw input; `qdrop` use qdrop input;')
@@ -114,11 +113,11 @@ def get_cur_time():
 def save_model(model, args, cfg, mode='calibrate'):
     assert mode in ['calibrate', 'optimize']
     if mode == 'calibrate':
-        auto_name = '{}_w{}_a{}_s{}_calibsize_{}_{}.pth'.format(
-            args.model, cfg.w_bit, cfg.a_bit, cfg.s_bit, cfg.calib_size, cfg.calib_metric)
+        auto_name = '{}_w{}_a{}_calibsize_{}_{}.pth'.format(
+            args.model, cfg.w_bit, cfg.a_bit, cfg.calib_size, cfg.calib_metric)
     else:
-        auto_name = '{}_w{}_a{}_s{}_optimsize_{}_{}_{}{}.pth'.format(
-            args.model, cfg.w_bit, cfg.a_bit, cfg.s_bit, cfg.optim_size, cfg.optim_metric, cfg.optim_mode, '_recon' if args.reconstruct_mlp else '')
+        auto_name = '{}_w{}_a{}_optimsize_{}_{}_{}{}.pth'.format(
+            args.model, cfg.w_bit, cfg.a_bit, cfg.optim_size, cfg.optim_metric, cfg.optim_mode, '_recon' if args.reconstruct_mlp else '')
     save_path = os.path.join(root_path, auto_name)
 
     logging.info(f"Saving checkpoint to {save_path}")
@@ -149,7 +148,7 @@ def load_model(model, args, device, mode='calibrate'):
 def main(args):
     logging.info("{} - start the process.".format(get_cur_time()))
     logging.info(str(args))
-    
+
     dir_path = os.path.dirname(os.path.abspath(args.config))
     if dir_path not in sys.path:
         sys.path.append(dir_path)
@@ -167,11 +166,9 @@ def main(args):
     cfg.optim_mode = args.optim_mode if hasattr(args, 'optim_mode') else cfg.optim_mode
     cfg.drop_prob = args.drop_prob if hasattr(args, 'drop_prob') else cfg.drop_prob
     cfg.reconstruct_mlp = args.reconstruct_mlp
-    cfg.pct1 = args.pct1 if hasattr(args, 'pct1') else cfg.pct1
-    cfg.pct2 = args.pct2 if hasattr(args, 'pct2') else cfg.pct2
+    cfg.pct = args.pct if hasattr(args, 'pct') else cfg.pct
     cfg.w_bit = args.w_bit if hasattr(args, 'w_bit') else cfg.w_bit
     cfg.a_bit = args.a_bit if hasattr(args, 'a_bit') else cfg.a_bit
-    cfg.s_bit = args.s_bit if hasattr(args, 's_bit') else cfg.s_bit
     for name, value in vars(cfg).items():
         logging.info(f"{name}: {value}")
         

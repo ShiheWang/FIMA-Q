@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 from quantizers.uniform import *
-from quantizers.logarithm import *
+
 
 class MinMaxQuantLinear(nn.Linear):
     def __init__(self, 
@@ -75,7 +75,8 @@ class PTQSLQuantLinear(MinMaxQuantLinear):
                  metric = "mse", 
                  search_round = 1, 
                  eq_n = 100, 
-                 n_V = 1):
+                 n_V = 1, 
+                 token_channel_wise=False):
         super().__init__(in_features, out_features, bias=bias, mode=mode, w_bit=w_bit, a_bit=a_bit)
         self.w_quantizer = UniformQuantizer(n_bits = w_bit, symmetric = True, channel_wise = True)
         self.a_quantizer = UniformQuantizer(n_bits = a_bit, symmetric = True, channel_wise = False)
@@ -85,6 +86,7 @@ class PTQSLQuantLinear(MinMaxQuantLinear):
         self.parallel_eq_n = eq_n
         self.n_V = n_V
         self.crb_rows = out_features // n_V
+        self.token_channel_wise = token_channel_wise
         
         self.w_quantizer.scale = nn.Parameter(torch.zeros((n_V, self.crb_rows, 1)))
         self.a_quantizer.scale = nn.Parameter(torch.zeros((1)))
@@ -115,9 +117,10 @@ class PTQSLBatchingQuantLinear(PTQSLQuantLinear):
                  calib_batch_size = 32,
                  search_round = 1, 
                  eq_n = 100, 
-                 n_V = 1):
+                 n_V = 1, 
+                 token_channel_wise=False):
         super().__init__(in_features, out_features, bias=bias, mode=mode, w_bit=w_bit, a_bit=a_bit,
-                         metric=metric, search_round=search_round, eq_n=eq_n, n_V=n_V)
+                         metric=metric, search_round=search_round, eq_n=eq_n, n_V=n_V, token_channel_wise=token_channel_wise)
         self.calib_batch_size = calib_batch_size
 
     def _initialize_calib_parameters(self):
@@ -130,7 +133,7 @@ class PTQSLBatchingQuantLinear(PTQSLQuantLinear):
             memory = props.total_memory // 2
         else:
             raise EnvironmentError("CUDA is not available on this system")
-        numel = (8 * self.raw_input[:self.calib_batch_size].numel() + 
+        numel = (16 * self.raw_input[:self.calib_batch_size].numel() + 
                  16 * self.raw_out[:self.calib_batch_size].numel()) # number of parameters on GPU
         self.parallel_eq_n = int((memory / 4) // numel)
         self.parallel_eq_n = math.ceil(self.eq_n * 1.0 / math.ceil(self.eq_n * 1.0 / self.parallel_eq_n))
@@ -263,10 +266,11 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
                  search_round = 1, 
                  eq_n = 100, 
                  n_V = 1, 
+                 token_channel_wise=False,
                  post_relu = False):
         super().__init__(in_features, out_features, bias=bias, mode=mode, w_bit=w_bit, a_bit=a_bit,
                          metric=metric, calib_batch_size=calib_batch_size, search_round=search_round, 
-                         eq_n=eq_n, n_V=n_V)
+                         eq_n=eq_n, n_V=n_V, token_channel_wise=token_channel_wise)
         self.fix_zp_zero = post_relu
         
         del self.a_quantizer, self.w_quantizer
@@ -458,13 +462,11 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
         delta_max = w_uppers_candidates[1:] - w_lowers_candidates[1:]
         splits = torch.linspace(0, 1, steps=num_scale).cuda()[:, None, None, None] * (delta_max - delta_min)
         weight_scale_candidates = (delta_min + splits).repeat(num_zp, 1, 1, 1) / (2 * self.w_quantizer.n_levels - 1)
-        weight_scale_candidates = torch.cat([weight_scale_candidates, weight_scale_candidates[-1:]], dim=0)
         zp_min = int(self.w_quantizer.n_levels - num_zp / 2)
         zp_max = int(self.w_quantizer.n_levels + num_zp / 2)
         zp_candidates = torch.tensor(range(zp_min, zp_max)).cuda()
         weight_zero_point_candidates = zp_candidates.repeat_interleave(num_scale)[:, None, None, None]
         weight_zero_point_candidates = weight_zero_point_candidates.repeat(1, self.n_V, self.crb_rows, self.in_features)
-        weight_zero_point_candidates = torch.cat([weight_zero_point_candidates, weight_zero_point_candidates[-1:]], dim=0)
         return weight_scale_candidates, weight_zero_point_candidates
     
     def calculate_percentile_activation_candidates(self, l=0.9, r=1.0, fix_zp_zero=False):
@@ -516,7 +518,13 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
         for e in range(self.search_round):
             self._search_best_w_scale(weight_scale_candidates, weight_zero_point_candidates)
             self._search_best_a_scale(a_scale_candidates, a_zero_point_candidates)
-
+        
+        if (self.token_channel_wise and len(self.raw_input.shape) == 3):
+            B, N, C = self.raw_input.shape
+            token_wise_scale = self.a_quantizer.scale.expand(1, N, 1)
+            del self.a_quantizer.scale
+            self.a_quantizer.scale = nn.Parameter(token_wise_scale.clone())
+        
         self.calibrated = True
         del self.raw_input, self.raw_out
         return None
@@ -535,10 +543,11 @@ class AsymmetricallyChannelWiseBatchingQuantLinear(AsymmetricallyBatchingQuantLi
                  search_round = 1, 
                  eq_n = 100, 
                  n_V=1,
+                 token_channel_wise=False,
                  post_relu = False):
         super().__init__(in_features, out_features, bias=bias, mode=mode, w_bit=w_bit, a_bit=a_bit,
                          metric=metric, calib_batch_size=calib_batch_size, search_round=search_round, 
-                         eq_n=eq_n, n_V=n_V, post_relu=post_relu)
+                         eq_n=eq_n, n_V=n_V, token_channel_wise=token_channel_wise, post_relu=post_relu)
         del self.a_quantizer
         self.a_quantizer = UniformQuantizer(n_bits = a_bit, symmetric = False, channel_wise = True)
         self.a_quantizer.scale = nn.Parameter(torch.zeros((in_features)))

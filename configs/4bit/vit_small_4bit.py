@@ -1,4 +1,3 @@
-
 class Config:
     def __init__(self):
         # calibration settings
@@ -8,11 +7,11 @@ class Config:
         self.calib_batch_size = 32
         self.w_bit = 4
         self.a_bit = 4
-        self.s_bit = 4
         self.qconv_a_bit = 8
         self.qhead_a_bit = 4
         self.calib_metric = 'mse'
         self.matmul_head_channel_wise = True
+        self.token_channel_wise = False
         self.eq_n = 128
         self.search_round = 3
         # optimization settings
@@ -22,8 +21,7 @@ class Config:
         self.temp = 20
         # reconstruction settings
         self.recon_metric = 'mse'
-        self.pct1 = 0.99
-        self.pct2 = 0.99
+        self.pct = 0.99
         # qdrop settings
         self.optim_mode = 'qdrop'
         self.drop_prob = 0.5

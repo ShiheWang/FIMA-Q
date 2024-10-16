@@ -95,20 +95,17 @@ def wrap_modules_in_net(model, cfg, reparam=False, recon=False):
             setattr(father_module, name[idx:], new_module)
         if isinstance(module, MatMul):
             idx = idx + 1 if idx != 0 else idx
-            matmul_kwargs = {
-                'B_bit': cfg.a_bit,
-                'mode': 'raw',
-                'metric': cfg.calib_metric,
-                'calib_batch_size': cfg.calib_batch_size,
-                'search_round': cfg.search_round,
-                'eq_n': cfg.eq_n,
-                'head_channel_wise': cfg.matmul_head_channel_wise,
-                'num_heads': father_module.num_heads,
-            }
-            
             new_module = AsymmetricallyBatchingQuantMatMul(
                 A_bit = cfg.a_bit,
-                **matmul_kwargs
+                B_bit = cfg.a_bit,
+                mode = 'raw',
+                metric = cfg.calib_metric,
+                calib_batch_size = cfg.calib_batch_size,
+                search_round = cfg.search_round,
+                eq_n = cfg.eq_n,
+                head_channel_wise = cfg.matmul_head_channel_wise,
+                token_channel_wise = cfg.token_channel_wise,
+                num_heads = father_module.num_heads,
             )
             setattr(father_module, name[idx:], new_module)
         if isinstance(module, nn.Linear):
@@ -125,6 +122,7 @@ def wrap_modules_in_net(model, cfg, reparam=False, recon=False):
                 'search_round': cfg.search_round,
                 'eq_n': cfg.eq_n,
                 'n_V': 3 if 'qkv' in name else 1,
+                'token_channel_wise': cfg.token_channel_wise,
             }
             idx = idx + 1 if idx != 0 else idx
             if cur_a_bit == cfg.w_bit and reparam and ('qkv' in name or 'reduction' in name or 'fc1' in name):
@@ -155,7 +153,7 @@ def wrap_modules_in_net(model, cfg, reparam=False, recon=False):
 
 
 def wrap_reparamed_modules_in_net(model):
-    module_dict={}
+    module_dict = {}
     for name, module in model.named_modules():
         module_dict[name] = module
         idx = name.rfind('.')
@@ -181,8 +179,11 @@ def wrap_reparamed_modules_in_net(model):
                 'search_round': module.search_round,
                 'eq_n': module.eq_n,
                 'n_V': module.n_V,
+                'token_channel_wise': module.token_channel_wise,
             }
             new_module = AsymmetricallyBatchingQuantLinear(**linear_kwargs)
+            if (new_module.a_quantizer.scale.shape != module.a_quantizer.scale.shape):
+                new_module.a_quantizer.scale.data = module.a_quantizer.scale.data.clone()
             new_module.load_state_dict(module.state_dict())
             new_module.calibrated = True
             new_module.a_quantizer.inited = True
