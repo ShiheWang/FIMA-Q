@@ -209,12 +209,13 @@ class BlockReconstructor(QuantCalibrator):
                 if need_calculate_raw_softmax:
                     raw_pred_softmax = F.softmax(pred, dim=-1).detach()
                     self.raw_pred_softmaxs.append(raw_pred_softmax)
-            torch.cuda.empty_cache()
+                torch.cuda.empty_cache()
         block.raw_out = torch.cat(full_block.tmp_out, dim=0)
         block.raw_input = torch.cat(full_block.tmp_input, dim=0)
         full_block.tmp_input, full_block.tmp_out = None, None
         for hook in hooks:
             hook.remove()
+        torch.cuda.empty_cache()
 
     def init_block_quanted_input(self, block, full_block, name, device):
         logging.info('initializing quanted input ...')
@@ -255,7 +256,7 @@ class BlockReconstructor(QuantCalibrator):
             if step==0:
                 raw_grads=raw_grad.unsqueeze(0)
             else:
-                raw_grads=torch.cat((raw_grads,raw_grad.unsqueeze(0)),dim=0)
+                raw_grads=torch.cat([raw_grads,raw_grad.unsqueeze(0)],dim=0)
             raw_grad=None
             full_block.tmp_grad = None
             hook.remove()

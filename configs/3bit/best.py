@@ -5,10 +5,10 @@ class Config:
         self.calib_size = 128
         self.optim_batch_size = 32
         self.calib_batch_size = 32
-        self.w_bit = 4
-        self.a_bit = 4
+        self.w_bit = 3
+        self.a_bit = 3
         self.qconv_a_bit = 8
-        self.qhead_a_bit = 4
+        self.qhead_a_bit = 3
         self.calib_metric = 'mse'
         self.matmul_head_channel_wise = True
         self.token_channel_wise = False
@@ -16,7 +16,7 @@ class Config:
         self.search_round = 3
         # optimization settings
         self.keep_gpu = True
-        self.optim_metric = 'fisher_ro'
+        self.optim_metric = 'mse'
         self.use_mean_hessian = True
         self.temp = 20
         # reconstruction settings

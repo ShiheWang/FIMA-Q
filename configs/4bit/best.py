@@ -16,7 +16,7 @@ class Config:
         self.search_round = 3
         # optimization settings
         self.keep_gpu = True
-        self.optim_metric = 'fisher_ro'
+        self.optim_metric = 'mse'
         self.use_mean_hessian = True
         self.temp = 20
         # reconstruction settings

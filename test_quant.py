@@ -95,7 +95,7 @@ def get_args_parser():
                         help='dropping rate in qdrop. set `drop-prob = 1.0` if do not use qdrop.')
     parser.add_argument('--quant-ratio', type=float, default=argparse.SUPPRESS, 
                         help='quant rate in qdrop+. set `quant-ratio = 1.0` if use `qinp`.')
-    parser.add_argument('--k', type=float, default=1, help='The rank of Fisher')
+    parser.add_argument('--k', type=int, default=1, help='The rank of Fisher')
     return parser
 
 

@@ -516,7 +516,9 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
         self._search_best_w_scale_self(weight_scale_candidates, weight_zero_point_candidates)
         self._search_best_a_scale_self(a_scale_candidates, a_zero_point_candidates)
         for e in range(self.search_round):
+            torch.cuda.empty_cache()
             self._search_best_w_scale(weight_scale_candidates, weight_zero_point_candidates)
+            torch.cuda.empty_cache()
             self._search_best_a_scale(a_scale_candidates, a_zero_point_candidates)
         
         if (self.token_channel_wise and len(self.raw_input.shape) == 3):

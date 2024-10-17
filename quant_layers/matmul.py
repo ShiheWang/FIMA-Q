@@ -251,6 +251,7 @@ class AsymmetricallyBatchingQuantMatMul(PTQSLBatchingQuantMatMul):
                         A_lowers_candidates_ = torch.gather(A_lowers_candidates, dim=0, index=A_best_index)
                     A_scale_candidates = ((A_uppers_candidates_ - A_lowers_candidates_) / (2 * self.A_quantizer.n_levels - 1)).contiguous().cuda()
                     A_zero_point_candidates = -(A_lowers_candidates_ / A_scale_candidates).round().contiguous().cuda()
+                    torch.cuda.empty_cache()
                     A_best_index = self._search_best_A_scale(A_scale_candidates, A_zero_point_candidates)
             if self.B_quantizer.n_bits < 32:
                 for ee in range(2):
@@ -262,6 +263,7 @@ class AsymmetricallyBatchingQuantMatMul(PTQSLBatchingQuantMatMul):
                         B_lowers_candidates_ = torch.gather(B_lowers_candidates, dim=0, index=B_best_index)
                     B_scale_candidates = ((B_uppers_candidates_ - B_lowers_candidates_) / (2 * self.B_quantizer.n_levels - 1)).contiguous().cuda()
                     B_zero_point_candidates = -(B_lowers_candidates_ / B_scale_candidates).round().contiguous().cuda()
+                    torch.cuda.empty_cache()
                     B_best_index = self._search_best_B_scale(B_scale_candidates, B_zero_point_candidates)
         
         if self.token_channel_wise:

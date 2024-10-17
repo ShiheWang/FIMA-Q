@@ -1,1 +1,1 @@
-python test_quant.py --model vit_base --config ./configs/4bit/vit_base_4bit.py --dataset ~/data/ILSVRC --val-batch-size 500   --calibrate --optimize
+srun -c 1 --mem=50G --gres=gpu:3080ti:1 python test_quant.py --model vit_small --config ./configs/4bit/vit_small_4bit.py --dataset ~/data/ILSVRC --val-batch-size 500   --load-calibrate-checkpoint ./checkpoints/quant_result/20241016_1209/vit_small_w4_a4_calibsize_128_mse.pth --optimize
