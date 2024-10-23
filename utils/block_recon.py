@@ -25,9 +25,6 @@ def patch_embed_forward(self, x):
     if self.perturb:
         rand_perturb = torch.empty_like(x, dtype=torch.float).uniform_(1, 2) * 1e-6
         x = x + rand_perturb
-        if not hasattr(self, 'perturb_y'):
-            self.perturb_y = []
-        self.perturb_y.append(rand_perturb)
     return x
 
 
@@ -37,10 +34,9 @@ def vit_block_forward(self, x: torch.Tensor) -> torch.Tensor:
     if self.perturb:
         rand_perturb = torch.empty_like(x, dtype=torch.float).uniform_(1, 2) * 1e-6
         x = x + rand_perturb
-        if not hasattr(self, 'perturb_y'):
-            self.perturb_y = []
-        self.perturb_y.append(rand_perturb)
+        
     return x
+
 
 
 def swin_block_forward(self, x):
@@ -67,9 +63,6 @@ def swin_block_forward(self, x):
     if self.perturb:
         rand_perturb = torch.empty_like(x, dtype=torch.float).uniform_(1, 2) * 1e-6
         x = x + rand_perturb
-        if not hasattr(self, 'perturb_y'):
-            self.perturb_y = []
-        self.perturb_y.append(rand_perturb)
     return x
 
 
@@ -81,9 +74,6 @@ def swin_patchmerging_forward(self, x):
     if self.perturb:
         rand_perturb = torch.empty_like(x, dtype=torch.float).uniform_(1, 2) * 1e-6
         x = x + rand_perturb
-        if not hasattr(self, 'perturb_y'):
-            self.perturb_y = []
-        self.perturb_y.append(rand_perturb)
     return x
 
 
@@ -235,6 +225,8 @@ class BlockReconstructor(QuantCalibrator):
         for _name, _block in self.blocks.items():
             self.set_block_mode(_block, 'raw')
 
+    
+
     def init_block_RO_hessian(self, block, full_block, name, device):
         logging.info('initializing perturbation hessian ...')
         for _name, _block in self.blocks.items():
@@ -288,6 +280,27 @@ class BlockReconstructor(QuantCalibrator):
         self.replace_block(full_block, block)
         for _name, _block in self.blocks.items():
             self.set_block_mode(_block, 'raw')
+
+    def new_fisher_ro(self,block,device):
+        hook = block.register_full_backward_hook(self.grad_hook)
+        for i, (inp, target) in enumerate(self.calib_loader):
+            self.model.zero_grad()
+            inp = inp.to(device)
+            pred = self.model(inp) / self.temperature
+            loss = F.kl_div(F.log_softmax(pred, dim=-1), self.raw_pred_softmaxs[i], reduction="batchmean")
+            loss.backward()
+            torch.cuda.empty_cache()
+        raw_grad=torch.cat(block.tmp_grad, dim=0)
+        raw_grad=raw_grad.reshape(raw_grad.shape[0], -1).abs()
+        raw_grad=raw_grad * torch.sqrt(raw_grad.numel() / raw_grad.pow(2).sum())
+        block.tmp_grad = None
+        hook.remove()
+        if block.raw_grad==None:
+            block.raw_grad=raw_grad.unsqueeze(0)
+        else:
+            block.raw_grad = torch.cat([block.raw_grad,raw_grad.unsqueeze(0)],dim=0)
+        del raw_grad
+        torch.cuda.empty_cache()
             
     def reconstruct_single_block(self, name, block, device,
                                  batch_size: int = 32, iters: int = 20000, weight: float = 0.01,
@@ -325,6 +338,7 @@ class BlockReconstructor(QuantCalibrator):
                                  rec_loss=self.metric if 'head' not in name else 'kl_div',
                                  b_range=b_range, decay_start=0, warmup=warmup, p=p)
 
+        i_change=math.floor(iters/self.k)
         for it in range(iters):
             idx = torch.randperm(block.raw_input.size(0))[:batch_size]
             if mode == 'qdrop':
@@ -336,7 +350,10 @@ class BlockReconstructor(QuantCalibrator):
             elif mode == 'qinp':
                 cur_inp = block.quanted_input[idx].to(device)
             cur_out = block.raw_out[idx].to(device)
+            
             if self.metric == "fisher_ro" :
+                #if it%i_change==0:
+                #    self.new_fisher_ro(block,device)
                 cur_grad = block.raw_grad[:,idx].to(device)
             elif self.metric == "hessian" or not self.use_mean_hessian:
                 cur_grad = block.raw_grad[idx].to(device)

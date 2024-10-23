@@ -11,7 +11,7 @@ class Config:
         self.qhead_a_bit = 4
         self.calib_metric = 'mse'
         self.matmul_head_channel_wise = True
-        self.token_channel_wise = False
+        self.token_channel_wise = True
         self.eq_n = 128
         self.search_round = 3
         # optimization settings

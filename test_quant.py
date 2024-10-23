@@ -127,6 +127,7 @@ def save_model(model, args, cfg, mode='calibrate'):
 def load_model(model, args, device, mode='calibrate'):
     assert mode in ['calibrate', 'optimize']
     ckpt_path = args.load_calibrate_checkpoint if mode == 'calibrate' else args.load_optimize_checkpoint
+    ckpt = torch.load(ckpt_path)
     for name, module in model.named_modules():
         if hasattr(module, 'mode'):
             module.calibrated = True
@@ -137,13 +138,14 @@ def load_model(model, args, device, mode='calibrate'):
         for attr in quantizer_attrs:
             if hasattr(module, attr):
                 getattr(module, attr).inited = True
-    ckpt = torch.load(ckpt_path)
+                ckpt_name = name + '.' + attr + '.scale'
+                getattr(module, attr).scale.data = ckpt[ckpt_name].clone()
+ 
     result = model.load_state_dict(ckpt, strict=False)
     logging.info(str(result))
     model.to(device)
     model.eval()
     return model
-
     
 def main(args):
     logging.info("{} - start the process.".format(get_cur_time()))
