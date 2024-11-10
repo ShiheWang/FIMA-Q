@@ -87,7 +87,7 @@ def get_args_parser():
                         help='mlp reconstruction metric')
     parser.add_argument("--calib-metric", type=str, default=argparse.SUPPRESS, choices=['mse', 'mae'], 
                         help='calibration metric')
-    parser.add_argument("--optim-metric", type=str, default=argparse.SUPPRESS, choices=['hessian', 'hessian_perturb', 'fisher_dpro', 'fisher_ro', 'fisher_diag', 'mse', 'mae'], 
+    parser.add_argument("--optim-metric", type=str, default=argparse.SUPPRESS, choices=[ 'fisher_brecq', 'fisher_dpro', 'fisher_lr', 'fisher_diag','fisher_lr+diag', 'mse', 'mae'], 
                         help='optimization metric')
     parser.add_argument('--optim-mode', type=str, default=argparse.SUPPRESS, choices=['qinp', 'rinp', 'qdrop'], 
                         help='`qinp`:use quanted input; `rinp`: use raw input; `qdrop` use qdrop input;')
@@ -96,6 +96,9 @@ def get_args_parser():
     parser.add_argument('--quant-ratio', type=float, default=argparse.SUPPRESS, 
                         help='quant rate in qdrop+. set `quant-ratio = 1.0` if use `qinp`.')
     parser.add_argument('--k', type=int, default=1, help='The rank of Fisher')
+    parser.add_argument('--p1', type=float, default=2.0, help='The proportion of ro')
+    parser.add_argument('--p2', type=float, default=2.0, help='The proportion of diag')
+    parser.add_argument('--dis-mode', type=str, default='r', choices=['r', 'q','rq','qf'])
     return parser
 
 
@@ -116,8 +119,8 @@ def save_model(model, args, cfg, mode='calibrate'):
         auto_name = '{}_w{}_a{}_calibsize_{}_{}.pth'.format(
             args.model, cfg.w_bit, cfg.a_bit, cfg.calib_size, cfg.calib_metric)
     else:
-        auto_name = '{}_w{}_a{}_optimsize_{}_{}_{}{}.pth'.format(
-            args.model, cfg.w_bit, cfg.a_bit, cfg.optim_size, cfg.optim_metric, cfg.optim_mode, '_recon' if args.reconstruct_mlp else '')
+        auto_name = '{}_w{}_a{}_optimsize_{}_{}_{}{}{}{}.pth'.format(
+            args.model, cfg.w_bit, cfg.a_bit, cfg.optim_size, cfg.optim_metric, cfg.optim_mode,args.dis_mode,args.k, '_recon' if args.reconstruct_mlp else '')
     save_path = os.path.join(root_path, auto_name)
 
     logging.info(f"Saving checkpoint to {save_path}")
@@ -243,7 +246,7 @@ def main(args):
         logging.info('Building calibrator ...')
         calib_loader = g.calib_loader(num=cfg.optim_size, batch_size=cfg.optim_batch_size, seed=args.seed)
         logging.info("{} - start {} guided block reconstruction".format(get_cur_time(), cfg.optim_metric))
-        block_reconstructor = BlockReconstructor(model, full_model, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, use_mean_hessian=cfg.use_mean_hessian,k=args.k)
+        block_reconstructor = BlockReconstructor(model, full_model, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, use_mean_hessian=cfg.use_mean_hessian,k=args.k,dis_mode=args.dis_mode,p1=args.p1,p2=args.p2)
         block_reconstructor.reconstruct_model(quant_act=True, mode=cfg.optim_mode, drop_prob=cfg.drop_prob, keep_gpu=cfg.keep_gpu)
         logging.info("{} - {} guided block reconstruction finished.".format(get_cur_time(), cfg.optim_metric))
         save_model(model, args, cfg, mode='optimize')
