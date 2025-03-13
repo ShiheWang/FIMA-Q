@@ -17,6 +17,7 @@ from utils.wrap_net import wrap_modules_in_net, wrap_reparamed_modules_in_net
 from utils.test_utils import *
 from quant_layers.matmul import MinMaxQuantMatMul
 from datetime import datetime
+from utils.ood import cifar100_dataset
 import logging
 
 while True:
@@ -56,17 +57,17 @@ def get_args_parser():
                         help='path to dataset')
     parser.add_argument("--calib-size", default=argparse.SUPPRESS,
                         type=int, help="size of calibration set")
+    parser.add_argument("--optim-size", default=1024,
+                        type=int, help="size of calibration set")
     parser.add_argument("--calib-batch-size", default=argparse.SUPPRESS,
+                        type=int, help="batchsize of calibration set")
+    parser.add_argument("--optim-batch-size", default=argparse.SUPPRESS,
                         type=int, help="batchsize of calibration set")
     parser.add_argument("--val-batch-size", default=200,
                         type=int, help="batchsize of validation set")
     parser.add_argument("--num-workers", default=8, type=int,
                         help="number of data loading workers (default: 8)")
     parser.add_argument("--device", default="cuda", type=str, help="device")
-
-    parser.add_argument('--reconstruct-mlp', action='store_true', help='reconstruct mlp with ReLU function.')
-    parser.add_argument('--load-reconstruct-checkpoint', type=str, default=None, help='Path to the reconstructed checkpoint.')
-    parser.add_argument('--test-reconstruct-checkpoint', action='store_true', help='validate the reconstructed checkpoint.')
     
     calibrate_mode_group = parser.add_mutually_exclusive_group()
     calibrate_mode_group.add_argument('--calibrate', action='store_true', help="Calibrate the model")
@@ -87,7 +88,7 @@ def get_args_parser():
                         help='mlp reconstruction metric')
     parser.add_argument("--calib-metric", type=str, default=argparse.SUPPRESS, choices=['mse', 'mae'], 
                         help='calibration metric')
-    parser.add_argument("--optim-metric", type=str, default=argparse.SUPPRESS, choices=[ 'fisher_brecq', 'fisher_dpro', 'fisher_lr', 'fisher_diag','fisher_lr+diag', 'mse', 'mae'], 
+    parser.add_argument("--optim-metric", type=str, default=argparse.SUPPRESS, choices=[ 'fisher_brecq', 'fisher_dpro', 'fisher_lr', 'fisher_diag','fisher_lr+diag', 'mse', 'fisher_diag_2'], 
                         help='optimization metric')
     parser.add_argument('--optim-mode', type=str, default=argparse.SUPPRESS, choices=['qinp', 'rinp', 'qdrop'], 
                         help='`qinp`:use quanted input; `rinp`: use raw input; `qdrop` use qdrop input;')
@@ -99,6 +100,7 @@ def get_args_parser():
     parser.add_argument('--p1', type=float, default=2.0, help='The proportion of ro')
     parser.add_argument('--p2', type=float, default=2.0, help='The proportion of diag')
     parser.add_argument('--dis-mode', type=str, default='r', choices=['r', 'q','rq','qf'])
+    parser.add_argument('--fim-size',  type=int, default=32)
     return parser
 
 
@@ -149,7 +151,7 @@ def load_model(model, args, device, mode='calibrate'):
     model.to(device)
     model.eval()
     return model
-    
+
 def main(args):
     logging.info("{} - start the process.".format(get_cur_time()))
     logging.info(str(args))
@@ -164,7 +166,9 @@ def main(args):
         
     cfg = Config()
     cfg.calib_size = args.calib_size if hasattr(args, 'calib_size') else cfg.calib_size
+    cfg.optim_size = args.optim_size if hasattr(args, 'optim_size') else cfg.optim_size
     cfg.calib_batch_size = args.calib_batch_size if hasattr(args, 'calib_batch_size') else cfg.calib_batch_size
+    cfg.optim_batch_size = args.optim_batch_size if hasattr(args, 'optim_batch_size') else cfg.optim_batch_size
     cfg.recon_metric = args.recon_metric if hasattr(args, 'recon_metric') else cfg.recon_metric
     cfg.calib_metric = args.calib_metric if hasattr(args, 'calib_metric') else cfg.calib_metric
     cfg.optim_metric = args.optim_metric if hasattr(args, 'optim_metric') else cfg.optim_metric
@@ -206,6 +210,9 @@ def main(args):
         model = timm.create_model(model_zoo[args.model], checkpoint_path='./checkpoints/vit_raw/{}.bin'.format(model_zoo[args.model]))
     except:
         model = timm.create_model(model_zoo[args.model], pretrained=True)
+    
+        
+
     full_model = copy.deepcopy(model)
     full_model.to(device)
     full_model.eval()
@@ -217,13 +224,14 @@ def main(args):
     logging.info('Building validation dataloader ...')
     val_loader = g.val_loader()
     criterion = nn.CrossEntropyLoss().to(device)
-
+   
     reparam = args.load_calibrate_checkpoint is None and args.load_optimize_checkpoint is None
     logging.info('Wraping quantiztion modules (reparam: {}, recon: {}) ...'.format(reparam, args.reconstruct_mlp))
+    
     model = wrap_modules_in_net(model, cfg, reparam=reparam, recon=args.reconstruct_mlp)
     model.to(device)
     model.eval()
-    
+
     if not args.load_optimize_checkpoint:
         if args.load_calibrate_checkpoint:
             logging.info(f"Restoring checkpoint from '{args.load_calibrate_checkpoint}'")
@@ -241,12 +249,15 @@ def main(args):
             save_model(model, args, cfg, mode='calibrate')
             logging.info('Validating after calibration ...')
             val_loss, val_prec1, val_prec5 = validate(val_loader, model, criterion, print_freq=args.print_freq, device=device)
-    
+
     if args.optimize:
         logging.info('Building calibrator ...')
-        calib_loader = g.calib_loader(num=cfg.optim_size, batch_size=cfg.optim_batch_size, seed=args.seed)
+        if args.ood:
+            calib_loader,_=cifar100_dataset(args.seed)
+        else:
+            calib_loader = g.calib_loader(num=cfg.optim_size, batch_size=cfg.optim_batch_size, seed=args.seed)
         logging.info("{} - start {} guided block reconstruction".format(get_cur_time(), cfg.optim_metric))
-        block_reconstructor = BlockReconstructor(model, full_model, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, use_mean_hessian=cfg.use_mean_hessian,k=args.k,dis_mode=args.dis_mode,p1=args.p1,p2=args.p2)
+        block_reconstructor = BlockReconstructor(model, full_model, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, use_mean_hessian=cfg.use_mean_hessian,k=args.k,dis_mode=args.dis_mode,p1=args.p1,p2=args.p2,fim_size=args.fim_size)
         block_reconstructor.reconstruct_model(quant_act=True, mode=cfg.optim_mode, drop_prob=cfg.drop_prob, keep_gpu=cfg.keep_gpu)
         logging.info("{} - {} guided block reconstruction finished.".format(get_cur_time(), cfg.optim_metric))
         save_model(model, args, cfg, mode='optimize')
@@ -260,7 +271,7 @@ def main(args):
         logging.info('Validating on test set after block reconstruction ...')
         val_loss, val_prec1, val_prec5 = validate(val_loader, model, criterion, print_freq=args.print_freq, device=device)
     logging.info("{} - finished the process.".format(get_cur_time()))
-    
+ 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(parents=[get_args_parser()])
     args = parser.parse_args()

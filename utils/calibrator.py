@@ -26,6 +26,8 @@ class QuantCalibrator:
         if module.tmp_out is None:
             module.tmp_out = []
         module.tmp_out.append(outp.cpu().detach())
+    def outp_forward_hook2(self, module, inp, outp):
+        module.tmp_out=outp
         
     def grad_hook(self, module, grad_input, grad_output):
         if module.tmp_grad is None:
@@ -66,6 +68,7 @@ class QuantCalibrator:
                     module.raw_input = torch.cat(module.tmp_input, dim=0)
                 if isinstance(module, MinMaxQuantMatMul):
                     module.raw_input = [torch.cat(_, dim=0) for _ in module.tmp_input]
+                    print(module.raw_input[0].shape)
                 for hook in hooks:
                     hook.remove()
                 module.tmp_input = module.tmp_out = None

@@ -1,0 +1,1 @@
+python test_quant.py --model deit_base --config ./configs/3bit/best.py --dataset ~/autodl-tmp/data/ILSVRC --val-batch-size 250   --load-calibrate-checkpoint ./checkpoints/baseline/tc/deit_base_w3_a3_calibsize_128_mse.pth --optimize --optim-metric fisher_lr+diag --k 10 --dis-mode qf  --p1 2.5 --p2 1.5;
