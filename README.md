@@ -2,7 +2,7 @@
 
 This repository contains the official PyTorch implementation for the CVPR 2025 paper "FIMA-Q: Post-Training Quantization for Vision Transformers by Fisher Information Matrix Approximation".
 
-![overview](./assets/main_fig.png)
+![overview](./assets/)
 
 ## Getting Started
 
