@@ -67,7 +67,7 @@ python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset
 
 ## Results
 
-Below are the experimental results of our proposed APHQ-ViT that you should get on ImageNet dataset. Checkpoints are available in [Google Drive](https://drive.google.com/drive/folders/1PxzP9O8dnXVeACTJJl4nHrQlVI_kpuz-?usp=drive_link).
+Below are the experimental results of our proposed APHQ-ViT that you should get on ImageNet dataset. Checkpoints are available in [Google Drive]().
 
 | Model | **Full Prec.** | **W4/A4** | **W3/A3** |
 |:----------:|:--------------:|:---------:|:---------:|
