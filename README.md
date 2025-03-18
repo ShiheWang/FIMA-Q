@@ -2,7 +2,7 @@
 
 This repository contains the official PyTorch implementation for the CVPR 2025 paper "FIMA-Q: Post-Training Quantization for Vision Transformers by Fisher Information Matrix Approximation".
 
-![overview](./assets/)
+![overview](./assets/main_fig.png)
 
 ## Getting Started
 
@@ -67,7 +67,7 @@ python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset
 
 ## Results
 
-Below are the experimental results of our proposed APHQ-ViT that you should get on ImageNet dataset. Checkpoints are available in [Google Drive]().
+Below are the experimental results of our proposed APHQ-ViT that you should get on ImageNet dataset. Checkpoints are available in [Google Drive](https://drive.google.com/drive/folders/1PxzP9O8dnXVeACTJJl4nHrQlVI_kpuz-?usp=drive_link).
 
 | Model | **Full Prec.** | **W4/A4** | **W3/A3** |
 |:----------:|:--------------:|:---------:|:---------:|
