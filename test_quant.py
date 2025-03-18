@@ -96,7 +96,7 @@ def get_args_parser():
     parser.add_argument('--k', type=int, default=1, help='The rank of Fisher')
     parser.add_argument('--p1', type=float, default=2.0, help='The proportion of ro')
     parser.add_argument('--p2', type=float, default=2.0, help='The proportion of diag')
-    parser.add_argument('--dis-mode', type=str, default='r', choices=['r', 'q','rq','qf'])
+    parser.add_argument('--dis-mode', type=str, default='q', choices=['r', 'q','rq','qf'])
     parser.add_argument('--fim-size',  type=int, default=32)
     parser.add_argument('--ood', action='store_true', help='use ood dataset for optimization')
     return parser

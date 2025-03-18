@@ -78,7 +78,7 @@ def swin_patchmerging_forward(self, x):
 
 
 class BlockReconstructor(QuantCalibrator):
-    def __init__(self, model, full_model, calib_loader, metric="mse", use_mean_hessian=True, temp=20,k=1,dis_mode='r',p1=2.,p2=2.,fim_size=32):
+    def __init__(self, model, full_model, calib_loader, metric="mse", use_mean_hessian=True, temp=20,k=1,dis_mode='q',p1=2.,p2=2.,fim_size=32):
         super().__init__(model, calib_loader)
         self.full_model = full_model
         self.metric = metric
@@ -417,6 +417,10 @@ class BlockReconstructor(QuantCalibrator):
                 a_optimizer.step()
                 a_scheduler.step()
         torch.cuda.empty_cache()
+        '''
+        save_path = './checkpoints/ours/loss/{}_{}.pth'.format(name,self.metric)
+        torch.save(torch.tensor(loss_func.losses),save_path)
+        '''
         # Finish optimization, use hard rounding.
         for name, module in block.named_modules():
             if hasattr(module, 'w_quantizer'):
