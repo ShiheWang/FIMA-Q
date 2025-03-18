@@ -68,7 +68,6 @@ class QuantCalibrator:
                     module.raw_input = torch.cat(module.tmp_input, dim=0)
                 if isinstance(module, MinMaxQuantMatMul):
                     module.raw_input = [torch.cat(_, dim=0) for _ in module.tmp_input]
-                    print(module.raw_input[0].shape)
                 for hook in hooks:
                     hook.remove()
                 module.tmp_input = module.tmp_out = None

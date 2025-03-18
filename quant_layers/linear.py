@@ -266,12 +266,10 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
                  search_round = 1, 
                  eq_n = 100, 
                  n_V = 1, 
-                 token_channel_wise=False,
-                 post_relu = False):
+                 token_channel_wise=False):
         super().__init__(in_features, out_features, bias=bias, mode=mode, w_bit=w_bit, a_bit=a_bit,
                          metric=metric, calib_batch_size=calib_batch_size, search_round=search_round, 
                          eq_n=eq_n, n_V=n_V, token_channel_wise=token_channel_wise)
-        self.fix_zp_zero = post_relu
         
         del self.a_quantizer, self.w_quantizer
         self.w_quantizer = UniformQuantizer(n_bits = w_bit, symmetric = False, channel_wise = True)
@@ -469,12 +467,9 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
         weight_zero_point_candidates = weight_zero_point_candidates.repeat(1, self.n_V, self.crb_rows, self.in_features)
         return weight_scale_candidates, weight_zero_point_candidates
     
-    def calculate_percentile_activation_candidates(self, l=0.9, r=1.0, fix_zp_zero=False):
-        if fix_zp_zero:
-            num_zp, num_scale = 1, self.eq_n
-        else:
-            num_zp = min(16, self.a_quantizer.n_levels * 2)
-            num_scale = int(self.eq_n / num_zp)
+    def calculate_percentile_activation_candidates(self, l=0.9, r=1.0):
+        num_zp = min(16, self.a_quantizer.n_levels * 2)
+        num_scale = int(self.eq_n / num_zp)
         percentiles_uppers, percentiles_lowers = [], []
         pct = torch.tensor([l, r])
         x = self.raw_input.cuda()
@@ -497,15 +492,12 @@ class AsymmetricallyBatchingQuantLinear(PTQSLBatchingQuantLinear):
         a_scale_candidates = ((delta_min + splits).repeat(1, num_zp) / (2 * self.a_quantizer.n_levels - 1)).clamp(min=1e-4)
         a_scale_candidates = torch.cat([a_scale_candidates, a_scale_candidates[..., -1:]], dim=-1)
 
-        if fix_zp_zero:
-            a_zero_point_candidates = torch.zeros_like(a_scale_candidates)
-        else:
-            zp_min = int(self.a_quantizer.n_levels - num_zp / 2)
-            zp_max = int(self.a_quantizer.n_levels + num_zp / 2)
-            zp_candidates = torch.tensor(range(zp_min, zp_max)).cuda()
-            a_zero_point_candidates = zp_candidates.repeat_interleave(num_scale)[None, :]
-            a_zero_point_candidates = a_zero_point_candidates.repeat(a_scale_candidates.shape[0], 1)
-            a_zero_point_candidates = torch.cat([a_zero_point_candidates, a_zero_point_candidates[..., -1:]], dim=-1)
+        zp_min = int(self.a_quantizer.n_levels - num_zp / 2)
+        zp_max = int(self.a_quantizer.n_levels + num_zp / 2)
+        zp_candidates = torch.tensor(range(zp_min, zp_max)).cuda()
+        a_zero_point_candidates = zp_candidates.repeat_interleave(num_scale)[None, :]
+        a_zero_point_candidates = a_zero_point_candidates.repeat(a_scale_candidates.shape[0], 1)
+        a_zero_point_candidates = torch.cat([a_zero_point_candidates, a_zero_point_candidates[..., -1:]], dim=-1)
         return a_scale_candidates, a_zero_point_candidates
     
     def hyperparameter_searching(self):
@@ -545,11 +537,10 @@ class AsymmetricallyChannelWiseBatchingQuantLinear(AsymmetricallyBatchingQuantLi
                  search_round = 1, 
                  eq_n = 100, 
                  n_V=1,
-                 token_channel_wise=False,
-                 post_relu = False):
+                 token_channel_wise=False):
         super().__init__(in_features, out_features, bias=bias, mode=mode, w_bit=w_bit, a_bit=a_bit,
                          metric=metric, calib_batch_size=calib_batch_size, search_round=search_round, 
-                         eq_n=eq_n, n_V=n_V, token_channel_wise=token_channel_wise, post_relu=post_relu)
+                         eq_n=eq_n, n_V=n_V, token_channel_wise=token_channel_wise)
         del self.a_quantizer
         self.a_quantizer = UniformQuantizer(n_bits = a_bit, symmetric = False, channel_wise = True)
         self.a_quantizer.scale = nn.Parameter(torch.zeros((in_features)))
@@ -573,7 +564,7 @@ class AsymmetricallyChannelWiseBatchingQuantLinear(AsymmetricallyBatchingQuantLi
     def hyperparameter_searching(self):
         assert self.a_quantizer.channel_wise and self.w_quantizer.channel_wise
         self._initialize_calib_parameters()
-        a_scale_candidates, a_zero_point_candidates = self.calculate_percentile_activation_candidates(fix_zp_zero=self.fix_zp_zero)
+        a_scale_candidates, a_zero_point_candidates = self.calculate_percentile_activation_candidates()
         self._search_best_a_scale_self(a_scale_candidates, a_zero_point_candidates)
         self.calibrated = True
         
@@ -585,10 +576,7 @@ class AsymmetricallyChannelWiseBatchingQuantLinear(AsymmetricallyBatchingQuantLi
         target_channel_min = -target_channel_zero_point * target_channel_scale
         r = (self.a_quantizer.scale / target_channel_scale)
         b = channel_min / r - target_channel_min
-        if self.fix_zp_zero:
-            self.prev_layer.weight.data = self.prev_layer.weight.data / r.view(-1, 1)
-        else:
-            self.prev_layer.weight.data = self.prev_layer.weight.data / r
+        self.prev_layer.weight.data = self.prev_layer.weight.data / r
         self.prev_layer.bias.data = self.prev_layer.bias.data / r.view(-1) - b
         self.weight.data = self.weight.data * r.view(1, -1)
         if self.bias is not None:

@@ -2,7 +2,7 @@
 
 This repository contains the official PyTorch implementation for the CVPR 2025 paper "FIMA-Q: Post-Training Quantization for Vision Transformers by Fisher Information Matrix Approximation".
 
-![overview](./assets/)
+![overview](./assets/main_fig.png)
 
 ## Getting Started
 
@@ -34,7 +34,7 @@ mv deit_tiny_patch16_224.bin ./checkpoint/vit_raw/
 You can quantize and evaluate a single model using the following command:
 
 ```bash
-python test_quant.py --model <MODEL> --config <CONFIG_FILE> --dataset <DATA_DIR> [--reconstruct-mlp] [--load-reconstruct-checkpoint <RECON_CKPT>] [--calibrate] [--load-calibrate-checkpoint <CALIB_CKPT>] [--optimize]
+python test_quant.py --model <MODEL> --config <CONFIG_FILE> --dataset <DATA_DIR> [--calibrate] [--load-calibrate-checkpoint <CALIB_CKPT>] [--optimize]
 ```
 
 - `--model <MODEL>`: Model architecture, which can be `deit_tiny`, `deit_small`, `deit_base`, `vit_tiny`, `vit_small`, `vit_base`, `swin_tiny`, `swin_small` and `swin_base`.
@@ -50,13 +50,13 @@ python test_quant.py --model <MODEL> --config <CONFIG_FILE> --dataset <DATA_DIR>
 Example: Optimize the model after calibration.
 
 ```bash
-python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500  --calibrate --optimize --optim-metric fisher_lr+diag
+python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --calibrate --optimize --optim-metric fisher_lr+diag
 ```
 
 Example: Load a calibrated checkpoint, then run optimization.
 
 ```bash
-python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --load-reconstruct-checkpoint ./checkpoints/quant_result/vit_small_w3_a3_calibsize_128_mse.pth  --optimize --optim-metric fisher_lr+diag
+python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --optimize --optim-metric fisher_lr+diag
 ```
 
 Example: Load a optimized checkpoint and test.

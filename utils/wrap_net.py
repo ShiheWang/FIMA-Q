@@ -52,7 +52,7 @@ def swin_attn_forward(self, x, mask=None):
     return x
     
     
-def wrap_modules_in_net(model, cfg, reparam=False, recon=False):
+def wrap_modules_in_net(model, cfg, reparam=False):
     for name, module in model.named_modules():
         if isinstance(module, Attention):
             setattr(module, "matmul1", MatMul())
@@ -143,7 +143,6 @@ def wrap_modules_in_net(model, cfg, reparam=False, recon=False):
             else: 
                 new_module = AsymmetricallyBatchingQuantLinear(
                     **linear_kwargs,
-                    post_relu = ('fc2' in name and recon),
                 )
             new_module.weight.data.copy_(module.weight.data)
             if module.bias is not None:

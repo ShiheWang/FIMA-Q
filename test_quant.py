@@ -15,7 +15,6 @@ from utils.calibrator import QuantCalibrator
 from utils.block_recon import BlockReconstructor
 from utils.wrap_net import wrap_modules_in_net, wrap_reparamed_modules_in_net
 from utils.test_utils import *
-from quant_layers.matmul import MinMaxQuantMatMul
 from datetime import datetime
 from utils.ood import cifar100_dataset
 import logging
@@ -84,8 +83,6 @@ def get_args_parser():
     parser.add_argument("--seed", default=3407, type=int, help="seed")
     parser.add_argument('--w_bit', type=int, default=argparse.SUPPRESS, help='bit-precision of weights')
     parser.add_argument('--a_bit', type=int, default=argparse.SUPPRESS, help='bit-precision of activation')
-    parser.add_argument("--recon-metric", type=str, default=argparse.SUPPRESS, choices=['hessian_perturb', 'mse', 'mae'], 
-                        help='mlp reconstruction metric')
     parser.add_argument("--calib-metric", type=str, default=argparse.SUPPRESS, choices=['mse', 'mae'], 
                         help='calibration metric')
     parser.add_argument("--optim-metric", type=str, default=argparse.SUPPRESS, choices=[ 'fisher_brecq', 'fisher_dpro', 'fisher_lr', 'fisher_diag','fisher_lr+diag', 'mse', 'fisher_diag_2'], 
@@ -101,6 +98,7 @@ def get_args_parser():
     parser.add_argument('--p2', type=float, default=2.0, help='The proportion of diag')
     parser.add_argument('--dis-mode', type=str, default='r', choices=['r', 'q','rq','qf'])
     parser.add_argument('--fim-size',  type=int, default=32)
+    parser.add_argument('--ood', action='store_true', help='use ood dataset for optimization')
     return parser
 
 
@@ -121,8 +119,8 @@ def save_model(model, args, cfg, mode='calibrate'):
         auto_name = '{}_w{}_a{}_calibsize_{}_{}.pth'.format(
             args.model, cfg.w_bit, cfg.a_bit, cfg.calib_size, cfg.calib_metric)
     else:
-        auto_name = '{}_w{}_a{}_optimsize_{}_{}_{}{}{}{}.pth'.format(
-            args.model, cfg.w_bit, cfg.a_bit, cfg.optim_size, cfg.optim_metric, cfg.optim_mode,args.dis_mode,args.k, '_recon' if args.reconstruct_mlp else '')
+        auto_name = '{}_w{}_a{}_optimsize_{}_{}_{}{}{}.pth'.format(
+            args.model, cfg.w_bit, cfg.a_bit, cfg.optim_size, cfg.optim_metric, cfg.optim_mode,args.dis_mode,args.k)
     save_path = os.path.join(root_path, auto_name)
 
     logging.info(f"Saving checkpoint to {save_path}")
@@ -169,13 +167,10 @@ def main(args):
     cfg.optim_size = args.optim_size if hasattr(args, 'optim_size') else cfg.optim_size
     cfg.calib_batch_size = args.calib_batch_size if hasattr(args, 'calib_batch_size') else cfg.calib_batch_size
     cfg.optim_batch_size = args.optim_batch_size if hasattr(args, 'optim_batch_size') else cfg.optim_batch_size
-    cfg.recon_metric = args.recon_metric if hasattr(args, 'recon_metric') else cfg.recon_metric
     cfg.calib_metric = args.calib_metric if hasattr(args, 'calib_metric') else cfg.calib_metric
     cfg.optim_metric = args.optim_metric if hasattr(args, 'optim_metric') else cfg.optim_metric
     cfg.optim_mode = args.optim_mode if hasattr(args, 'optim_mode') else cfg.optim_mode
     cfg.drop_prob = args.drop_prob if hasattr(args, 'drop_prob') else cfg.drop_prob
-    cfg.reconstruct_mlp = args.reconstruct_mlp
-    cfg.pct = args.pct if hasattr(args, 'pct') else cfg.pct
     cfg.w_bit = args.w_bit if hasattr(args, 'w_bit') else cfg.w_bit
     cfg.a_bit = args.a_bit if hasattr(args, 'a_bit') else cfg.a_bit
     for name, value in vars(cfg).items():
@@ -226,9 +221,9 @@ def main(args):
     criterion = nn.CrossEntropyLoss().to(device)
    
     reparam = args.load_calibrate_checkpoint is None and args.load_optimize_checkpoint is None
-    logging.info('Wraping quantiztion modules (reparam: {}, recon: {}) ...'.format(reparam, args.reconstruct_mlp))
+    logging.info('Wraping quantiztion modules (reparam: {}) ...'.format(reparam))
     
-    model = wrap_modules_in_net(model, cfg, reparam=reparam, recon=args.reconstruct_mlp)
+    model = wrap_modules_in_net(model, cfg, reparam=reparam)
     model.to(device)
     model.eval()
 
@@ -253,7 +248,7 @@ def main(args):
     if args.optimize:
         logging.info('Building calibrator ...')
         if args.ood:
-            calib_loader,_=cifar100_dataset(args.seed)
+            calib_loader, _ = cifar100_dataset(args.seed)
         else:
             calib_loader = g.calib_loader(num=cfg.optim_size, batch_size=cfg.optim_batch_size, seed=args.seed)
         logging.info("{} - start {} guided block reconstruction".format(get_cur_time(), cfg.optim_metric))

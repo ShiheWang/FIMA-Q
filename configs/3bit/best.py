@@ -19,9 +19,6 @@ class Config:
         self.optim_metric = 'mse'
         self.use_mean_hessian = True
         self.temp = 20
-        # reconstruction settings
-        self.recon_metric = 'mse'
-        self.pct = 0.99
         # qdrop settings
         self.optim_mode = 'qdrop'
         self.drop_prob = 0.5

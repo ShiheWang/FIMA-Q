@@ -417,8 +417,6 @@ class BlockReconstructor(QuantCalibrator):
                 a_optimizer.step()
                 a_scheduler.step()
         torch.cuda.empty_cache()
-        save_path = './checkpoints/ours/loss/{}_{}.pth'.format(name,self.metric)
-        torch.save(torch.tensor(loss_func.losses),save_path)
         # Finish optimization, use hard rounding.
         for name, module in block.named_modules():
             if hasattr(module, 'w_quantizer'):
