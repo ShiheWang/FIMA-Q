@@ -50,19 +50,19 @@ python test_quant.py --model <MODEL> --config <CONFIG_FILE> --dataset <DATA_DIR>
 Example: Optimize the model after calibration.
 
 ```bash
-python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --calibrate --optimize --optim-metric fisher_lr+diag
+python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --calibrate --optimize --optim-metric fisher_dplr
 ```
 
 Example: Load a calibrated checkpoint, then run optimization.
 
 ```bash
-python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --optimize --optim-metric fisher_lr+diag
+python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --optimize --optim-metric fisher_dplr
 ```
 
 Example: Load a optimized checkpoint and test.
 
 ```bash
-python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --load-optimize-checkpoint ./checkpoints/quant_result/vit_small_w3_a3_optimsize_1024_fisher_lr+diag_qdropq15.pth --test-optimize-checkpoint 
+python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --load-optimize-checkpoint ./checkpoints/quant_result/vit_small_w3_a3_optimsize_1024_fisher_dplr_qdropq15.pth --test-optimize-checkpoint 
 ```
 
 ## Results

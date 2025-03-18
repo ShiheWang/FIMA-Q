@@ -78,7 +78,7 @@ def swin_patchmerging_forward(self, x):
 
 
 class BlockReconstructor(QuantCalibrator):
-    def __init__(self, model, full_model, calib_loader, metric="mse", use_mean_hessian=True, temp=20,k=1,dis_mode='q',p1=2.,p2=2.,fim_size=32):
+    def __init__(self, model, full_model, calib_loader, metric="mse", use_mean_hessian=True, temp=20,k=1,dis_mode='q',p1=2.,p2=2.):
         super().__init__(model, calib_loader)
         self.full_model = full_model
         self.metric = metric
@@ -92,7 +92,6 @@ class BlockReconstructor(QuantCalibrator):
         self.quanted_blocks = []
         self.raw_pred_softmaxs = None
         self.temperature = temp
-        self.fim_size=fim_size
         types_of_block = [
             timm.layers.patch_embed.PatchEmbed,
             timm.models.vision_transformer.Block,
@@ -171,7 +170,7 @@ class BlockReconstructor(QuantCalibrator):
         if qinp and 'patch_embed' not in name:
             self.init_block_quanted_input(block, full_block, name, device)
         
-        if self.metric in ["fisher_lr","fisher_diag","fisher_lr+diag","fisher_diag_2"] and  self.dis_mode in ['r']:
+        if self.metric in ["fisher_lr","fisher_diag","fisher_dplr"] and self.dis_mode in ['r']:
             self.init_block_RO_hessian(block, full_block, name, device)
         elif self.metric == "fisher_brecq":
             self.init_block_brecq_hessian(block, full_block, name, device)
@@ -194,7 +193,7 @@ class BlockReconstructor(QuantCalibrator):
         hooks.append(full_block.register_forward_hook(self.outp_forward_hook))
         hooks.append(full_block.register_forward_hook(self.single_input_forward_hook))
         need_calculate_raw_softmax = False
-        if self.raw_pred_softmaxs is None and self.metric in ["fisher_brecq", "fisher_lr","fisher_diag","fisher_lr+diag","fisher_diag_2"]:
+        if self.raw_pred_softmaxs is None and self.metric in ["fisher_brecq", "fisher_lr","fisher_diag","fisher_dplr"]:
             need_calculate_raw_softmax = True
             self.raw_pred_softmaxs = []
         with torch.no_grad():
@@ -238,8 +237,6 @@ class BlockReconstructor(QuantCalibrator):
         for step in range(self.k):
             hook = full_block.register_full_backward_hook(self.grad_hook)
             for i, (inp, target) in enumerate(self.calib_loader):
-                if i > self.fim_size - 1:
-                    break
                 self.model.zero_grad()
                 inp = inp.to(device)
                 pred = self.full_model(inp) / self.temperature
@@ -256,10 +253,7 @@ class BlockReconstructor(QuantCalibrator):
             raw_grad=None
             full_block.tmp_grad = None
             hook.remove()
-            #full_block.r*=5
         full_block.perturb = False
-        if self.fim_size == 1:
-            raw_grads = raw_grads[:,0].unsqueeze(1)
         block.raw_grad = raw_grads.mean(dim=1).unsqueeze(1).repeat(1,32,1)
         del raw_grad,raw_grads
         torch.cuda.empty_cache()
@@ -376,7 +370,7 @@ class BlockReconstructor(QuantCalibrator):
         a_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(a_optimizer, T_max=iters, eta_min=0.) if len(a_params) != 0 else None
         loss_func = LossFunction(block, round_loss='relaxation', weight=weight, max_count=iters, 
                                  rec_loss=self.metric if 'head' not in name else 'kl_div',
-                                 b_range=b_range, decay_start=0, warmup=warmup, p=p,p1=self.p1,p2=self.p2)
+                                 b_range=b_range, decay_start=0, warmup=warmup, p=p, p1=self.p1, p2=self.p2)
         loss_func.losses=[]
         i_change=math.floor(iters/self.k)
         for it in range(iters):
@@ -391,9 +385,9 @@ class BlockReconstructor(QuantCalibrator):
                 cur_inp = block.quanted_input[idx].to(device)
             cur_out = block.raw_out[idx].to(device)
             
-            if self.metric in ["fisher_lr","fisher_diag","fisher_lr+diag","fisher_diag_2"] :
+            if self.metric in ["fisher_lr","fisher_diag","fisher_dplr"] :
                 if self.dis_mode in ['q']:
-                    if it%i_change==0:
+                    if it % i_change == 0:
                         self.new_fisher_ro(block,device)
                 elif self.dis_mode in ['qf']:
                     if it in range(self.k):
@@ -417,10 +411,6 @@ class BlockReconstructor(QuantCalibrator):
                 a_optimizer.step()
                 a_scheduler.step()
         torch.cuda.empty_cache()
-        '''
-        save_path = './checkpoints/ours/loss/{}_{}.pth'.format(name,self.metric)
-        torch.save(torch.tensor(loss_func.losses),save_path)
-        '''
         # Finish optimization, use hard rounding.
         for name, module in block.named_modules():
             if hasattr(module, 'w_quantizer'):
@@ -478,7 +468,6 @@ class LossFunction:
         self.p = p
         self.p1 = p1
         self.p2 = p2
-        self.losses=[]
         self.temp_decay = LinearTempDecay(max_count, rel_start_decay=warmup + (1 - warmup) * decay_start,
                                           start_b=b_range[0], end_b=b_range[1])
         self.count = 0
@@ -507,6 +496,8 @@ class LossFunction:
         self.count += 1
         if self.rec_loss == 'mse':
             rec_loss = self.lp_loss(pred, tgt, p=self.p) / 10
+        elif self.rec_loss == 'mae':
+            rec_loss = self.lp_loss(pred, tgt, p=1.0) / 10
         elif self.rec_loss == 'fisher_lr':
             cha = (pred - tgt).abs().reshape(pred.shape[0], -1)
             loss_1 = (cha.unsqueeze(1) * grad.abs().transpose(0,1)).mean(dim=2).pow(2).mean()
@@ -519,22 +510,14 @@ class LossFunction:
             if self.count == 1:
                 self.init_loss_2 = loss_2.detach()
             rec_loss = 2 * loss_2 / self.init_loss_2
-        elif self.rec_loss == 'fisher_diag_2':
-            cha = (pred - tgt).abs().reshape(pred.shape[0], -1)
-            loss_2 = (cha.pow(2) * grad.abs().pow(2)).sum(1).mean() /10
-            if self.count == 1:
-                self.init_loss_2 = loss_2.detach()
-            rec_loss = 2 * loss_2 / self.init_loss_2
-        elif self.rec_loss == 'fisher_lr+diag':
+        elif self.rec_loss == 'fisher_dplr':
             cha = (pred - tgt).abs().reshape(pred.shape[0], -1)
             loss_1 = (cha.unsqueeze(1) * grad.abs().transpose(0,1)).mean(dim=2).pow(2).mean()
             loss_2 = (cha.pow(2) * grad.abs().mean(dim=0)).mean()
             if self.count == 1:
                 self.init_loss_1 = loss_1.detach()
                 self.init_loss_2 = loss_2.detach()
-            rec_loss = self.p1* loss_1 / self.init_loss_1 + self.p2*loss_2 / self.init_loss_2
-        elif self.rec_loss == 'mae':
-            rec_loss = self.lp_loss(pred, tgt, p=1.0) / 10
+            rec_loss = self.p1 * loss_1 / self.init_loss_1 + self.p2 * loss_2 / self.init_loss_2
         elif self.rec_loss == 'fisher_brecq':
             loss_1= ((pred - tgt).pow(2) * grad.pow(2)).sum(1).mean() /10
             if self.count == 1:
@@ -561,7 +544,6 @@ class LossFunction:
         if self.count == 1 or self.count % 500 == 0:
             print('Total loss:\t{:.3f} (rec:{:.3f}, round:{:.3f})\tb={:.2f}\tcount={}'.format(
                   float(total_loss), float(rec_loss), float(round_loss), b, self.count))
-        self.losses.append(rec_loss.cpu())
         return total_loss
 
 

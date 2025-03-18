@@ -16,12 +16,9 @@ class Config:
         self.search_round = 3
         # optimization settings
         self.keep_gpu = True
-        self.optim_metric = 'mse'
+        self.optim_metric = 'fisher_dplr'
         self.use_mean_hessian = True
         self.temp = 20
-        # reconstruction settings
-        self.recon_metric = 'mse'
-        self.pct = 0.99
         # qdrop settings
         self.optim_mode = 'qdrop'
         self.drop_prob = 0.5
