@@ -78,8 +78,9 @@ def swin_patchmerging_forward(self, x):
 
 
 class BlockReconstructor(QuantCalibrator):
-    def __init__(self, model, full_model, calib_loader, metric="mse", use_mean_hessian=True, temp=20,k=1,dis_mode='q',p1=2.,p2=2.):
+    def __init__(self, model, full_model, optim_batch_size,calib_loader, metric="mse", use_mean_hessian=True, temp=20,k=1,dis_mode='q',p1=2.,p2=2.):
         super().__init__(model, calib_loader)
+        self.batch_size = optim_batch_size
         self.full_model = full_model
         self.metric = metric
         self.use_mean_hessian = use_mean_hessian
@@ -254,41 +255,11 @@ class BlockReconstructor(QuantCalibrator):
             full_block.tmp_grad = None
             hook.remove()
         full_block.perturb = False
-        block.raw_grad = raw_grads.mean(dim=1).unsqueeze(1).repeat(1,32,1)
+        block.raw_grad = raw_grads.mean(dim=1).unsqueeze(1).repeat(1,self.batch_size,1)
         del raw_grad,raw_grads
         torch.cuda.empty_cache()
-        
-    def get_hessian(self, full_block):
-        device = next(self.model.parameters()).device
-        full_block.tmp_out=None
-        hook = full_block.register_forward_hook(self.outp_forward_hook2)
-        two_g=[]
-        for i, (inp, target) in enumerate(self.calib_loader):
-            inp = inp.to(device)
-            target = target.to(device)
-            pred = self.full_model(inp)
-            loss = nn.CrossEntropyLoss()
-            out=loss(pred,target)
-            one_g=torch.autograd.grad(outputs=out,inputs=full_block.tmp_out,create_graph=True)[0].reshape(-1)
-            two_g_d=torch.ones_like(one_g)
-            #two_g_d2=torch.autograd.grad(outputs=one_g,inputs=full_block.tmp_out,grad_outputs=torch.ones_like(one_g))[0].mean(dim=2).mean(dim=0)
-            #print(two_g_d2)
-            t=10*full_block.tmp_out.shape[2]
-            
-            for i,anygrad in enumerate(one_g):
-                if i>t-1:
-                    break
-                two_g_d[i]=torch.autograd.grad(outputs=anygrad,inputs=full_block.tmp_out,retain_graph=True)[0].reshape(-1).mean()
-            torch.cuda.empty_cache()
-            two_g.append(two_g_d)
-            break
-        two_g=torch.cat(two_g, dim=0)
-        hook.remove()
-        return two_g
-    def hessian(self):
-        return self.get_hessian(self.full_blocks["blocks.7"])
-        
-            
+
+
     def init_block_brecq_hessian(self, block, full_block, name, device):
         logging.info('initializing brecq hessian ...')
         for _name, _block in self.blocks.items():
@@ -327,13 +298,13 @@ class BlockReconstructor(QuantCalibrator):
         raw_grad=raw_grad * torch.sqrt(raw_grad.numel() / raw_grad.pow(2).sum())
         block.tmp_grad = None
         hook.remove()
-        raw_grad = raw_grad.mean(dim=0).unsqueeze(0).repeat(32,1)
+        raw_grad = raw_grad.mean(dim=0).unsqueeze(0).repeat(self.batch_size,1)
         if block.raw_grad==None:
             block.raw_grad=raw_grad.unsqueeze(0)
         else:
             block.raw_grad = torch.cat([block.raw_grad,raw_grad.unsqueeze(0)],dim=0)
         del raw_grad
-        
+
         torch.cuda.empty_cache()
             
     def reconstruct_single_block(self, name, block, device,

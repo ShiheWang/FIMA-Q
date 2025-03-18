@@ -93,7 +93,8 @@ def get_args_parser():
     parser.add_argument('--k', type=int, default=1, help='The rank of Fisher')
     parser.add_argument('--p1', type=float, default=2.0, help='The proportion of ro')
     parser.add_argument('--p2', type=float, default=2.0, help='The proportion of diag')
-    parser.add_argument('--dis-mode', type=str, default='q', choices=['r', 'q','rq','qf'])
+    parser.add_argument('--dis-mode', type=str, default='q', choices=['r', 'q','qf'],
+                        help='the mode of getting gradient. `r`:use random disturbance; `q`: use quantization; `qf` Take the first k times (default:Uniformly obtain k times);')
     return parser
 
 
@@ -247,7 +248,7 @@ def main(args):
         logging.info('Building calibrator ...')
         calib_loader = g.calib_loader(num=cfg.optim_size, batch_size=cfg.optim_batch_size, seed=args.seed)
         logging.info("{} - start {} guided block reconstruction".format(get_cur_time(), cfg.optim_metric))
-        block_reconstructor = BlockReconstructor(model, full_model, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, use_mean_hessian=cfg.use_mean_hessian,k=args.k,dis_mode=args.dis_mode,p1=args.p1,p2=args.p2)
+        block_reconstructor = BlockReconstructor(model, full_model, cfg.optim_batch_size, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, use_mean_hessian=cfg.use_mean_hessian,k=args.k,dis_mode=args.dis_mode,p1=args.p1,p2=args.p2)
         block_reconstructor.reconstruct_model(quant_act=True, mode=cfg.optim_mode, drop_prob=cfg.drop_prob, keep_gpu=cfg.keep_gpu)
         logging.info("{} - {} guided block reconstruction finished.".format(get_cur_time(), cfg.optim_metric))
         save_model(model, args, cfg, mode='optimize')
