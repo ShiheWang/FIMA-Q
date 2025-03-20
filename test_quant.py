@@ -91,10 +91,10 @@ def get_args_parser():
     parser.add_argument('--drop-prob', type=float, default=argparse.SUPPRESS, 
                         help='dropping rate in qdrop. set `drop-prob = 1.0` if do not use qdrop.')
     parser.add_argument('--k', type=int, default=1, help='The rank of Fisher')
-    parser.add_argument('--p1', type=float, default=2.0, help='The proportion of ro')
-    parser.add_argument('--p2', type=float, default=2.0, help='The proportion of diag')
-    parser.add_argument('--dis-mode', type=str, default='q', choices=['r', 'q','qf'],
-                        help='the mode of getting gradient. `r`:use random disturbance; `q`: use quantization; `qf` Take the first k times (default:Uniformly obtain k times);')
+    parser.add_argument('--p1', type=float, default=1.0, help='The proportion of ro')
+    parser.add_argument('--p2', type=float, default=1.0, help='The proportion of diag')
+    parser.add_argument('--dis-mode', type=str, default='q', choices=['q','qf'],
+                        help='the mode of getting gradient. `q`: use quantization; `qf` Take the first k times (default:Uniformly obtain k times);')
     return parser
 
 
