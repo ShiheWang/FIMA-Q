@@ -209,9 +209,6 @@ def main(args):
     except:
         model = timm.create_model(model_zoo[args.model], pretrained=True)
 
-    full_model = copy.deepcopy(model)
-    full_model.to(device)
-    full_model.eval()
     model.to(device)
     model.eval()
     data_path = args.dataset
@@ -250,7 +247,7 @@ def main(args):
         logging.info('Building calibrator ...')
         calib_loader = g.calib_loader(num=cfg.optim_size, batch_size=cfg.optim_batch_size, seed=args.seed)
         logging.info("{} - start {} guided block reconstruction".format(get_cur_time(), cfg.optim_metric))
-        block_reconstructor = BlockReconstructor(model, full_model, cfg.optim_batch_size, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, k=cfg.k, dis_mode=cfg.dis_mode, p1=cfg.p1, p2=cfg.p2)
+        block_reconstructor = BlockReconstructor(model, cfg.optim_batch_size, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, k=cfg.k, dis_mode=cfg.dis_mode, p1=cfg.p1, p2=cfg.p2)
         block_reconstructor.reconstruct_model(quant_act=True, mode=cfg.optim_mode, drop_prob=cfg.drop_prob, keep_gpu=cfg.keep_gpu)
         logging.info("{} - {} guided block reconstruction finished.".format(get_cur_time(), cfg.optim_metric))
         save_model(model, args, cfg, mode='optimize')

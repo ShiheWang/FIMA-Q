@@ -78,17 +78,15 @@ def swin_patchmerging_forward(self, x):
 
 
 class BlockReconstructor(QuantCalibrator):
-    def __init__(self, model, full_model, optim_batch_size,calib_loader, metric="mse", temp=20, k=1, dis_mode='q', p1=1., p2=1.):
+    def __init__(self, model, optim_batch_size,calib_loader, metric="mse", temp=20, k=1, dis_mode='q', p1=1., p2=1.):
         super().__init__(model, calib_loader)
         self.batch_size = optim_batch_size
-        self.full_model = full_model
         self.metric = metric
         self.k = k
         self.dis_mode = dis_mode
         self.p1 = p1
         self.p2 = p2
         self.blocks = {}
-        self.full_blocks = {}
         self.quanted_blocks = []
         self.raw_pred_softmaxs = None
         self.temperature = temp
@@ -101,10 +99,6 @@ class BlockReconstructor(QuantCalibrator):
         for name, module in self.model.named_modules():
             if any(isinstance(module, t) for t in types_of_block) or name.split('.')[-1] == 'head':
                 self.blocks[name] = module
-                BlockReconstructor._prepare_module_data_init(module)
-        for name, module in self.full_model.named_modules():
-            if any(isinstance(module, t) for t in types_of_block) or name.split('.')[-1] == 'head':
-                self.full_blocks[name] = module
                 BlockReconstructor._prepare_module_data_init(module)
                 
     @staticmethod
@@ -166,13 +160,13 @@ class BlockReconstructor(QuantCalibrator):
                     if hasattr(module.B_quantizer, 'drop_prob'):
                         module.B_quantizer.drop_prob = prob
 
-    def init_block_raw_data(self, block, full_block, name, device, qinp=False, keep_gpu=True):
-        self.init_block_raw_inp_outp(block, full_block, name, device)
+    def init_block_raw_data(self, block, name, device, qinp=False, keep_gpu=True):
+        self.init_block_raw_inp_outp(block, device)
         if qinp and 'patch_embed' not in name:
-            self.init_block_quanted_input(block, full_block, name, device)
+            self.init_block_quanted_input(block, device)
         
         if self.metric == "fisher_brecq":
-            self.init_block_brecq_hessian(block, full_block, name, device)
+            self.init_block_brecq_hessian(block, device)
 
         if 'patch_embed' in name:
             block.quanted_input = block.raw_input
@@ -186,13 +180,13 @@ class BlockReconstructor(QuantCalibrator):
             if block.raw_grad is not None:
                 block.raw_grad = block.raw_grad.to(device)
 
-    def init_block_raw_inp_outp(self, block, full_block, name, device):
+    def init_block_raw_inp_outp(self, block, device):
         logging.info('initializing raw input and raw output ...')
         for _name, _block in self.blocks.items():
             self.set_block_mode(_block, 'raw')
         hooks = []
-        hooks.append(full_block.register_forward_hook(self.outp_forward_hook))
-        hooks.append(full_block.register_forward_hook(self.single_input_forward_hook))
+        hooks.append(block.register_forward_hook(self.outp_forward_hook))
+        hooks.append(block.register_forward_hook(self.single_input_forward_hook))
         need_calculate_raw_softmax = False
         if self.raw_pred_softmaxs is None and self.metric in ["fisher_brecq", "fisher_lr","fisher_diag","fisher_dplr"]:
             need_calculate_raw_softmax = True
@@ -200,23 +194,22 @@ class BlockReconstructor(QuantCalibrator):
         with torch.no_grad():
             for inp, target in self.calib_loader:
                 inp = inp.to(device)
-                pred = self.full_model(inp) / self.temperature
+                pred = self.model(inp) / self.temperature
                 if need_calculate_raw_softmax:
                     raw_pred_softmax = F.softmax(pred, dim=-1).detach()
                     self.raw_pred_softmaxs.append(raw_pred_softmax)
                 torch.cuda.empty_cache()
-        block.raw_out = torch.cat(full_block.tmp_out, dim=0)
-        block.raw_input = torch.cat(full_block.tmp_input, dim=0)
-        full_block.tmp_input, full_block.tmp_out = None, None
+        block.raw_out = torch.cat(block.tmp_out, dim=0)
+        block.raw_input = torch.cat(block.tmp_input, dim=0)
+        block.tmp_input, block.tmp_out = None, None
         for hook in hooks:
             hook.remove()
         torch.cuda.empty_cache()
 
-    def init_block_quanted_input(self, block, full_block, name, device):
+    def init_block_quanted_input(self, block, device):
         logging.info('initializing quanted input ...')
         for _name, _block in self.blocks.items():
             self.set_block_mode(_block, 'quant_forward' if _name in self.quanted_blocks else 'raw')
-        #self.replace_block(block, full_block)
         hook = block.register_forward_hook(self.single_input_forward_hook)
         with torch.no_grad():
             for i, (inp, target) in enumerate(self.calib_loader):
@@ -226,16 +219,13 @@ class BlockReconstructor(QuantCalibrator):
         block.quanted_input = torch.cat(block.tmp_input, dim=0)
         block.tmp_input = None
         hook.remove()
-        #self.replace_block(full_block, block)
         for _name, _block in self.blocks.items():
             self.set_block_mode(_block, 'raw')
 
-    def init_block_brecq_hessian(self, block, full_block, name, device):
-        logging.info('initializing brecq hessian ...')
+    def init_block_brecq_hessian(self, block, device):
+        logging.info('initializing brecq-fim ...')
         for _name, _block in self.blocks.items():
             self.set_block_mode(_block, 'quant_forward' if _name in self.quanted_blocks else 'raw')
-            if _block is block:
-                break
         hook = block.register_full_backward_hook(self.grad_hook)
         for i, (inp, target) in enumerate(self.calib_loader):
             self.model.zero_grad()
@@ -245,9 +235,7 @@ class BlockReconstructor(QuantCalibrator):
             loss.backward()
             torch.cuda.empty_cache()
         raw_grads = torch.cat(block.tmp_grad, dim=0)
-        block.tmp_grad = None
-        block.raw_grad = raw_grads.abs().pow(2)
-        block.raw_grad = block.raw_grad * torch.sqrt(block.raw_grad.numel() / block.raw_grad.pow(2).sum())
+        block.raw_grad = raw_grads.abs().reshape(raw_grads.shape[0], -1)
         hook.remove()
         del raw_grads
         for _name, _block in self.blocks.items():
@@ -255,7 +243,7 @@ class BlockReconstructor(QuantCalibrator):
         torch.cuda.empty_cache()
 
     def new_fisher_ro(self, block, device):
-        logging.info('updating fisher information matrix ...')
+        print('updating fisher information matrix ...')
         hooks = []
         hooks.append(block.register_forward_hook(self.outp_forward_hook))
         hooks.append(block.register_full_backward_hook(self.grad_hook))
@@ -381,9 +369,9 @@ class BlockReconstructor(QuantCalibrator):
             if hasattr(module, 'mode'):
                 module.mode = 'raw'
         for idx, name in enumerate(self.blocks.keys()):
-            block, full_block = self.blocks[name], self.full_blocks[name]
+            block = self.blocks[name]
             logging.info('reconstructing {} ...'.format(name))
-            self.init_block_raw_data(block, full_block, name, device, qinp=(mode != 'rinp'), keep_gpu=keep_gpu)
+            self.init_block_raw_data(block, name, device, qinp=(mode != 'rinp'), keep_gpu=keep_gpu)
             logging.info('adaround training for {} ...'.format(name))
             self.reconstruct_single_block(name, block, device, quant_act=quant_act, mode=mode, drop_prob=drop_prob)
             self.quanted_blocks.append(name)
@@ -470,7 +458,8 @@ class LossFunction:
                 self.init_loss_2 = loss_2.detach()
             rec_loss = self.p1 * loss_1 / self.init_loss_1 + self.p2 * loss_2 / self.init_loss_2
         elif self.rec_loss == 'fisher_brecq':
-            loss_1 = ((pred - tgt).pow(2) * grad.pow(2)).sum(1).mean()
+            cha = (pred - tgt).abs().reshape(pred.shape[0], -1)
+            loss_1 = (cha.pow(2) * grad.pow(2)).mean()
             if self.count == 1:
                 self.init_loss_1 = loss_1.detach()
             rec_loss = loss_1 / self.init_loss_1
