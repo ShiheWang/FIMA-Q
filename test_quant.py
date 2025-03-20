@@ -117,8 +117,8 @@ def save_model(model, args, cfg, mode='calibrate'):
     else:
         auto_name = '{}_w{}_a{}_optimsize_{}_{}{}{}_{}.pth'.format(
             args.model, cfg.w_bit, cfg.a_bit, cfg.optim_size, cfg.optim_metric, 
-            '' if cfg.optim_metric in ['mse', 'mae'] else '_dis_mode_' + args.dis_mode, 
-            '' if cfg.optim_metric not in['fisher_lr', 'fisher_dplr'] else '_rank_' + str(args.k), 
+            '' if cfg.optim_metric in ['mse', 'mae'] else '_dis_mode_' + cfg.dis_mode, 
+            '' if cfg.optim_metric not in['fisher_lr', 'fisher_dplr'] else '_rank_' + str(cfg.k), 
             cfg.optim_mode)
     save_path = os.path.join(root_path, auto_name)
 
