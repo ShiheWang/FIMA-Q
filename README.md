@@ -61,7 +61,7 @@ python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset
 Example: Load a optimized checkpoint and test.
 
 ```bash
-python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --load-optimize-checkpoint ./checkpoints/quant_result/vit_small_w3_a3_optimsize_1024_fisher_dplr_qdropq15.pth --test-optimize-checkpoint 
+python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --load-optimize-checkpoint ./checkpoints/quant_result/vit_small_w3_a3_optimsize_1024_fisher_dplr_dis_mode_q_rank_15_qdrop.pth --test-optimize-checkpoint 
 ```
 
 ## Results
