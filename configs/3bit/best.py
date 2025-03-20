@@ -17,8 +17,12 @@ class Config:
         # optimization settings
         self.keep_gpu = True
         self.optim_metric = 'fisher_dplr'
-        self.use_mean_hessian = True
         self.temp = 20
+        # fisher settings
+        self.k = 5
+        self.p1 = 1.0
+        self.p2 = 1.0
+        self.dis_mode = 'q'
         # qdrop settings
         self.optim_mode = 'qdrop'
         self.drop_prob = 0.5

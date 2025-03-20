@@ -90,10 +90,10 @@ def get_args_parser():
                         help='`qinp`:use quanted input; `rinp`: use raw input; `qdrop` use qdrop input;')
     parser.add_argument('--drop-prob', type=float, default=argparse.SUPPRESS, 
                         help='dropping rate in qdrop. set `drop-prob = 1.0` if do not use qdrop.')
-    parser.add_argument('--k', type=int, default=1, help='The rank of Fisher')
-    parser.add_argument('--p1', type=float, default=1.0, help='The proportion of ro')
-    parser.add_argument('--p2', type=float, default=1.0, help='The proportion of diag')
-    parser.add_argument('--dis-mode', type=str, default='q', choices=['q','qf'],
+    parser.add_argument('--k', type=int, default=argparse.SUPPRESS, help='The rank of Fisher')
+    parser.add_argument('--p1', type=float, default=argparse.SUPPRESS, help='The proportion of low rank')
+    parser.add_argument('--p2', type=float, default=argparse.SUPPRESS, help='The proportion of diag')
+    parser.add_argument('--dis-mode', type=str, default=argparse.SUPPRESS, choices=['q','qf'],
                         help='the mode of getting gradient. `q`: use quantization; `qf` Take the first k times (default:Uniformly obtain k times);')
     return parser
 
@@ -172,6 +172,10 @@ def main(args):
     cfg.drop_prob = args.drop_prob if hasattr(args, 'drop_prob') else cfg.drop_prob
     cfg.w_bit = args.w_bit if hasattr(args, 'w_bit') else cfg.w_bit
     cfg.a_bit = args.a_bit if hasattr(args, 'a_bit') else cfg.a_bit
+    cfg.k = args.k if hasattr(args, 'k') else cfg.k
+    cfg.p1 = args.p1 if hasattr(args, 'p1') else cfg.p1
+    cfg.p2 = args.p2 if hasattr(args, 'p2') else cfg.p2
+    cfg.dis_mode = args.dis_mode if hasattr(args, 'dis_mode') else cfg.dis_mode
     for name, value in vars(cfg).items():
         logging.info(f"{name}: {value}")
         
@@ -204,8 +208,6 @@ def main(args):
         model = timm.create_model(model_zoo[args.model], checkpoint_path='./checkpoints/vit_raw/{}.bin'.format(model_zoo[args.model]))
     except:
         model = timm.create_model(model_zoo[args.model], pretrained=True)
-    
-        
 
     full_model = copy.deepcopy(model)
     full_model.to(device)
@@ -248,7 +250,7 @@ def main(args):
         logging.info('Building calibrator ...')
         calib_loader = g.calib_loader(num=cfg.optim_size, batch_size=cfg.optim_batch_size, seed=args.seed)
         logging.info("{} - start {} guided block reconstruction".format(get_cur_time(), cfg.optim_metric))
-        block_reconstructor = BlockReconstructor(model, full_model, cfg.optim_batch_size, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, use_mean_hessian=cfg.use_mean_hessian,k=args.k,dis_mode=args.dis_mode,p1=args.p1,p2=args.p2)
+        block_reconstructor = BlockReconstructor(model, full_model, cfg.optim_batch_size, calib_loader, metric=cfg.optim_metric, temp=cfg.temp, k=cfg.k, dis_mode=cfg.dis_mode, p1=cfg.p1, p2=cfg.p2)
         block_reconstructor.reconstruct_model(quant_act=True, mode=cfg.optim_mode, drop_prob=cfg.drop_prob, keep_gpu=cfg.keep_gpu)
         logging.info("{} - {} guided block reconstruction finished.".format(get_cur_time(), cfg.optim_metric))
         save_model(model, args, cfg, mode='optimize')

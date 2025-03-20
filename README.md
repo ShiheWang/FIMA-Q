@@ -14,7 +14,6 @@ cd FIMA-Q
 ```
 
 - Install pytorch and [timm](https://github.com/huggingface/pytorch-image-models/tree/main).
-- **Note**: A higher version of pytorch may yield better results. The results reported in our paper were obtained using the following configurations:
 
 ```bash
 pip install torch==1.10.0 torchvision --index-url https://download.pytorch.org/whl/cu113
@@ -42,7 +41,7 @@ python test_quant.py --model <MODEL> --config <CONFIG_FILE> --dataset <DATA_DIR>
 - `--config <CONFIG_FILE>`: Path to the model quantization configuration file.
 
 - `--dataset <DATA_DIR>`: Path to ImageNet dataset.
-- 
+
 - `--calibrate` and `--load-calibrate-checkpoint <CALIB_CKPT>`: A `mutually_exclusive_group` to choose between quantizing an existing model or directly load a calibrated model. The default selection is `--calibrate`.
 
 - `--optimize`: Wether to perform Adaround optimization after calibration.

@@ -78,16 +78,15 @@ def swin_patchmerging_forward(self, x):
 
 
 class BlockReconstructor(QuantCalibrator):
-    def __init__(self, model, full_model, optim_batch_size,calib_loader, metric="mse", use_mean_hessian=True, temp=20,k=1,dis_mode='q',p1=2.,p2=2.):
+    def __init__(self, model, full_model, optim_batch_size,calib_loader, metric="mse", temp=20, k=1, dis_mode='q', p1=1., p2=1.):
         super().__init__(model, calib_loader)
         self.batch_size = optim_batch_size
         self.full_model = full_model
         self.metric = metric
-        self.use_mean_hessian = use_mean_hessian
-        self.k=k
-        self.dis_mode=dis_mode
-        self.p1=p1
-        self.p2=p2
+        self.k = k
+        self.dis_mode = dis_mode
+        self.p1 = p1
+        self.p2 = p2
         self.blocks = {}
         self.full_blocks = {}
         self.quanted_blocks = []
@@ -305,7 +304,6 @@ class BlockReconstructor(QuantCalibrator):
                     w_params += [module.w_quantizer.alpha]
                     if quant_act:
                         module.a_quantizer.scale.requires_grad = True
-                        
                         a_params += [module.a_quantizer.scale]
                     else:
                         module.mode = 'debug_only_quant_weight'
@@ -321,8 +319,8 @@ class BlockReconstructor(QuantCalibrator):
         a_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(a_optimizer, T_max=iters, eta_min=0.) if len(a_params) != 0 else None
         loss_func = LossFunction(block, round_loss='relaxation', weight=weight, max_count=iters, 
                                  rec_loss=self.metric if 'head' not in name else 'kl_div',
-                                 b_range=b_range, decay_start=0, warmup=warmup, p=p, p1=self.p1, p2=self.p2)
-        i_change=math.floor(iters/self.k)
+                                 b_range=b_range, decay_start=0, warmup=warmup, p1=self.p1, p2=self.p2)
+        i_change = math.floor(iters / self.k)
         for it in range(iters):
             idx = torch.randperm(block.raw_input.size(0))[:batch_size]
             if mode == 'qdrop':
@@ -345,7 +343,7 @@ class BlockReconstructor(QuantCalibrator):
                     if it in range(self.k):
                         self.new_fisher_ro(block, device)
                         loss_func.update_fisher = True
-                cur_grad = block.raw_grad.to(device) if block.raw_grad is not None else None
+                cur_grad = block.raw_grad.to(device)
             elif self.metric == "fisher_brecq" :
                 cur_grad = block.raw_grad[idx].to(device)
             else:
@@ -409,7 +407,6 @@ class LossFunction:
                  b_range: tuple = (10, 2),
                  decay_start: float = 0.0,
                  warmup: float = 0.0,
-                 p: float = 2.,
                  p1: float = 2.,
                  p2: float = 2.):
 
@@ -418,7 +415,6 @@ class LossFunction:
         self.weight = weight
         self.rec_loss = rec_loss
         self.loss_start = max_count * warmup
-        self.p = p
         self.p1 = p1
         self.p2 = p2
         self.temp_decay = LinearTempDecay(max_count, rel_start_decay=warmup + (1 - warmup) * decay_start,
@@ -449,7 +445,7 @@ class LossFunction:
         """
         self.count += 1
         if self.rec_loss == 'mse':
-            rec_loss = self.lp_loss(pred, tgt, p=self.p) / 10
+            rec_loss = self.lp_loss(pred, tgt, p=2.0) / 10
         elif self.rec_loss == 'mae':
             rec_loss = self.lp_loss(pred, tgt, p=1.0) / 10
         elif self.rec_loss == 'fisher_lr':
