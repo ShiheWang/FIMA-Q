@@ -433,9 +433,15 @@ class LossFunction:
         """
         self.count += 1
         if self.rec_loss == 'mse':
-            rec_loss = self.lp_loss(pred, tgt, p=2.0) / 10
+            rec_loss = self.lp_loss(pred, tgt, p=2.0)
+            if self.count == 1:
+                self.init_loss_1 = rec_loss.detach()
+            rec_loss = rec_loss / self.init_loss_1
         elif self.rec_loss == 'mae':
-            rec_loss = self.lp_loss(pred, tgt, p=1.0) / 10
+            rec_loss = self.lp_loss(pred, tgt, p=1.0)
+            if self.count == 1:
+                self.init_loss_1 = rec_loss.detach()
+            rec_loss = rec_loss / self.init_loss_1
         elif self.rec_loss == 'fisher_lr':
             cha = (pred - tgt).abs().reshape(pred.shape[0], -1)
             loss_1 = (cha * grad.abs()).mean(dim=-1).pow(2).mean()
