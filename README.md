@@ -56,7 +56,7 @@ python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset
 Example: Load a calibrated checkpoint, then run optimization.
 
 ```bash
-python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --optimize --optim-metric fisher_dplr
+python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --load-calibrate-checkpoint ./checkpoints/quant_result/vit_small_w3_a3_calibsize_128_mse.pth --optimize --optim-metric fisher_dplr
 ```
 
 Example: Load a optimized checkpoint and test.
