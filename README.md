@@ -16,7 +16,7 @@ cd FIMA-Q
 - Install pytorch and [timm](https://github.com/huggingface/pytorch-image-models/tree/main).
 
 ```bash
-pip install torch==1.10.0 torchvision --index-url https://download.pytorch.org/whl/cu113
+pip install torch==2.2.2 torchvision --index-url https://download.pytorch.org/whl/cu121
 pip install timm==0.9.2
 ```
 
