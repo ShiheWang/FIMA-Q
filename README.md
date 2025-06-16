@@ -1,6 +1,6 @@
 ## FIMA-Q: Post-Training Quantization for Vision Transformers by Fisher Information Matrix Approximation
 
-This repository contains the official PyTorch implementation for the CVPR 2025 paper "FIMA-Q: Post-Training Quantization for Vision Transformers by Fisher Information Matrix Approximation".
+This repository contains the official PyTorch implementation for the CVPR 2025 paper "[FIMA-Q: Post-Training Quantization for Vision Transformers by Fisher Information Matrix Approximation](https://arxiv.org/abs/2506.11543)".
 
 ![overview](./assets/main_fig.png)
 
@@ -44,7 +44,7 @@ python test_quant.py --model <MODEL> --config <CONFIG_FILE> --dataset <DATA_DIR>
 
 - `--calibrate` and `--load-calibrate-checkpoint <CALIB_CKPT>`: A `mutually_exclusive_group` to choose between quantizing an existing model or directly load a calibrated model. The default selection is `--calibrate`.
 
-- `--optimize`: Wether to perform Adaround optimization after calibration.
+- `--optimize`: Whether to perform Adaround optimization after calibration.
 
 Example: Optimize the model after calibration.
 
@@ -58,7 +58,7 @@ Example: Load a calibrated checkpoint, then run optimization.
 python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --load-calibrate-checkpoint ./checkpoints/quant_result/vit_small_w3_a3_calibsize_128_mse.pth --optimize --optim-metric fisher_dplr
 ```
 
-Example: Load a optimized checkpoint and test.
+Example: Load an optimized checkpoint and test.
 
 ```bash
 python test_quant.py --model vit_small --config ./configs/3bit/best.py --dataset ~/data/ILSVRC/Data/CLS-LOC --val-batch-size 500 --load-optimize-checkpoint ./checkpoints/quant_result/vit_small_w3_a3_optimsize_1024_fisher_dplr_dis_mode_q_rank_15_qdrop.pth --test-optimize-checkpoint 
